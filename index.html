@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Défi Double — TC Morgins</title>
 
   <!-- ============================================================
@@ -55,6 +55,9 @@
       min-height: 100vh;
       display: flex;
       flex-direction: column;
+      /* iOS : empêche le pull-to-refresh et le rubber-band qui font bouger la topbar */
+      overscroll-behavior-y: contain;
+      -webkit-overflow-scrolling: touch;
     }
     a { color: inherit; text-decoration: none; }
     button { cursor: pointer; font-family: inherit; border: none; background: none; }
@@ -73,6 +76,14 @@
       right: 0;
       z-index: 100;
       background: var(--white);
+      /* iOS Safari : force le compositing GPU pour éviter les artefacts de scroll */
+      -webkit-transform: translate3d(0, 0, 0);
+      transform: translate3d(0, 0, 0);
+      -webkit-backface-visibility: hidden;
+      backface-visibility: hidden;
+      will-change: transform;
+      /* iPhone avec encoche : padding pour ne pas passer sous la status bar */
+      padding-top: env(safe-area-inset-top);
     }
     .header {
       background: var(--white);
@@ -176,7 +187,11 @@
     /* ============================================================
        MAIN CONTENT
     ============================================================ */
-    main { flex: 1; padding: 130px 1.25rem 2rem; /* padding-top compense la topbar fixée (~115px) + respiration */ }
+    main {
+      flex: 1;
+      /* padding-top compense la topbar fixée (~115px) + respiration + safe area iPhone notch */
+      padding: calc(130px + env(safe-area-inset-top)) 1.25rem 2rem;
+    }
     .content-wrap { max-width: 720px; margin: 0 auto; }
 
     .screen { display: none; }
@@ -503,7 +518,14 @@
     .hidden { display: none !important; }
 
     /* Tabs scroll horizontal sur petit écran */
-    .tabs-inner { overflow-x: auto; scrollbar-width: none; }
+    .tabs-inner {
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-width: none;
+      /* iOS : autorise UNIQUEMENT le pan horizontal (le vertical scroll passe à la page) */
+      touch-action: pan-x;
+      -webkit-overflow-scrolling: touch;
+    }
     .tabs-inner::-webkit-scrollbar { display: none; }
 
     /* Barre de tri */
