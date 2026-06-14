@@ -65,11 +65,12 @@
     /* ============================================================
        HEADER
     ============================================================ */
-    /* Topbar = header + onglets, sticky en un seul bloc */
+    /* Topbar = header + onglets, fixée en haut (iOS-safe) */
     .topbar {
-      position: -webkit-sticky;
-      position: sticky;
+      position: fixed;
       top: 0;
+      left: 0;
+      right: 0;
       z-index: 100;
       background: var(--white);
     }
@@ -175,7 +176,7 @@
     /* ============================================================
        MAIN CONTENT
     ============================================================ */
-    main { flex: 1; padding: 1.5rem 1.25rem 2rem; }
+    main { flex: 1; padding: 130px 1.25rem 2rem; /* padding-top compense la topbar fixée (~115px) + respiration */ }
     .content-wrap { max-width: 720px; margin: 0 auto; }
 
     .screen { display: none; }
@@ -3418,7 +3419,14 @@
       const j = state.juniorsLive.find(x => x.name === name) || JUNIORS.find(x => x.name === name);
       if (!j) { $('jprofileBody').innerHTML = '<div class="empty-state">Joueur introuvable.</div>'; return; }
 
-      const ranked = [...state.juniorsLive].sort((a, b) => (b.stars || 0) - (a.stars || 0));
+      // Même tri que la liste "Joueurs" (étoiles desc, puis ordre JUNIORS, puis alpha)
+      const ranked = [...state.juniorsLive].sort((a, b) => {
+        if ((b.stars || 0) !== (a.stars || 0)) return (b.stars || 0) - (a.stars || 0);
+        const aIdx = JUNIORS.findIndex(j => j.name === a.name);
+        const bIdx = JUNIORS.findIndex(j => j.name === b.name);
+        if (aIdx >= 0 && bIdx >= 0) return aIdx - bIdx;
+        return a.name.localeCompare(b.name, 'fr');
+      });
       const rankIdx = ranked.findIndex(x => x.name === name);
       const rankTxt = rankIdx >= 0 ? `${rankIdx + 1}ᵉ / ${ranked.length} joueurs` : '—';
 
