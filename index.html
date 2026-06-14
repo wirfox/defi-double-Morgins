@@ -1,0 +1,4075 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Défi Double — TC Morgins</title>
+
+  <!-- ============================================================
+       FIREBASE SDK (compat) — Firestore uniquement
+  ============================================================ -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <style>
+    /* ============================================================
+       Variables & Reset
+    ============================================================ */
+    :root {
+      --primary:       #E8720C;
+      --primary-dark:  #C45C00;
+      --primary-light: #FFF4EC;
+      --primary-100:   #FFE4CC;
+      --navy:          #1E293B;
+      --navy-dark:     #0F172A;
+      --text:          #334155;
+      --text-light:    #64748B;
+      --text-dark:     #0F172A;
+      --border:        #E2E8F0;
+      --bg:            #F8FAFC;
+      --white:         #FFFFFF;
+      --green:         #16A34A;
+      --green-bg:      #DCFCE7;
+      --red:           #DC2626;
+      --red-bg:        #FEE2E2;
+      --yellow:        #92400E;
+      --yellow-bg:     #FEF3C7;
+      --shadow-sm:     0 1px 2px rgba(0,0,0,0.05);
+      --shadow:        0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-md:     0 4px 6px rgba(0,0,0,0.06), 0 2px 4px rgba(0,0,0,0.04);
+      --shadow-lg:     0 10px 15px rgba(0,0,0,0.08), 0 4px 6px rgba(0,0,0,0.04);
+      --radius:        8px;
+      --radius-lg:     12px;
+      --radius-xl:     16px;
+      --font:          -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      --transition:    all 0.2s ease;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: var(--font);
+      color: var(--text);
+      background: var(--white);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    a { color: inherit; text-decoration: none; }
+    button { cursor: pointer; font-family: inherit; border: none; background: none; }
+    ul { list-style: none; }
+    img { max-width: 100%; display: block; }
+    input { font-family: inherit; }
+
+    /* ============================================================
+       HEADER
+    ============================================================ */
+    .header {
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+      box-shadow: var(--shadow-sm);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .header-inner {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 0 1.25rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 64px;
+    }
+    .header-brand {
+      display: flex;
+      align-items: center;
+      gap: 0.7rem;
+    }
+    .header-logo {
+      width: 42px;
+      height: 42px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .header-logo img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    .header-title {
+      font-size: 0.95rem;
+      font-weight: 500;
+      color: var(--text-dark);
+      line-height: 1.2;
+    }
+    .header-sub {
+      font-size: 0.7rem;
+      color: var(--text-light);
+      font-weight: 400;
+    }
+    .header-date {
+      font-size: 0.72rem;
+      color: var(--text-light);
+      font-weight: 500;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+    .header-date svg {
+      width: 13px; height: 13px;
+      stroke: var(--text-light); fill: none;
+      stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+      flex-shrink: 0;
+    }
+
+    /* ============================================================
+       TABS
+    ============================================================ */
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      background: var(--white);
+    }
+    .tabs-inner {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 0 1.25rem;
+      display: flex;
+      width: 100%;
+    }
+    .tab-btn {
+      padding: 0.85rem 1.25rem;
+      font-size: 0.88rem;
+      font-weight: 500;
+      color: var(--text-light);
+      border-bottom: 2.5px solid transparent;
+      margin-bottom: -1px;
+      transition: var(--transition);
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      white-space: nowrap;
+    }
+    .tab-btn svg {
+      width: 15px; height: 15px;
+      stroke: currentColor; fill: none;
+      stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+      flex-shrink: 0;
+    }
+    .tab-btn:hover { color: var(--text-dark); }
+    .tab-btn.active {
+      color: var(--primary);
+      border-bottom-color: var(--primary);
+    }
+
+    /* ============================================================
+       MAIN CONTENT
+    ============================================================ */
+    main { flex: 1; padding: 1.5rem 1.25rem 2rem; }
+    .content-wrap { max-width: 720px; margin: 0 auto; }
+
+    .screen { display: none; }
+    .screen.active { display: block; }
+
+    /* ============================================================
+       CARD
+    ============================================================ */
+    .card {
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow);
+      padding: 1.5rem;
+      margin-bottom: 1.25rem;
+    }
+    .card-title {
+      font-size: 0.72rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
+      color: var(--primary);
+      margin-bottom: 1.25rem;
+    }
+
+    /* ============================================================
+       FORM
+    ============================================================ */
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-bottom: 1.25rem;
+    }
+    @media (max-width: 400px) {
+      .form-row { grid-template-columns: 1fr; }
+    }
+    .form-group { display: flex; flex-direction: column; gap: 0.4rem; }
+    .form-label {
+      font-size: 0.82rem;
+      font-weight: 500;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    .team-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      font-size: 0.65rem;
+      font-weight: 500;
+    }
+    .badge-a { background: var(--primary-100); color: var(--primary-dark); }
+    .badge-b { background: #E0F2FE; color: #0369A1; }
+
+    .form-input {
+      padding: 0.65rem 0.9rem;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 1rem;
+      font-weight: 500;
+      color: var(--text-dark);
+      background: var(--white);
+      transition: var(--transition);
+      width: 100%;
+      -moz-appearance: textfield;
+    }
+    .form-input::-webkit-inner-spin-button,
+    .form-input::-webkit-outer-spin-button { -webkit-appearance: none; }
+    .form-input:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(232,114,12,0.13);
+    }
+    .form-input.error { border-color: var(--red); box-shadow: 0 0 0 3px rgba(220,38,38,0.1); }
+    .form-input::placeholder { color: var(--text-light); font-weight: 400; }
+
+    /* Quick-select team dropdown hint */
+    .team-select-hint {
+      font-size: 0.72rem;
+      color: var(--text-light);
+      margin-top: 0.2rem;
+    }
+
+    /* Radio group */
+    .radio-group { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .radio-label {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.5rem 0.9rem;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text);
+      cursor: pointer;
+      transition: var(--transition);
+      user-select: none;
+    }
+    .radio-label:hover { border-color: var(--primary); color: var(--primary); }
+    .radio-label input[type="radio"] { display: none; }
+    .radio-dot { display: none; }
+    .radio-label:has(input[type="radio"]:checked) {
+      border-color: var(--primary);
+      background: var(--primary-light);
+      color: var(--primary-dark);
+      font-weight: 500;
+    }
+
+    .form-divider { height: 1px; background: var(--border); margin: 1.25rem 0; }
+
+    /* Calculate button */
+    .btn-calc {
+      width: 100%;
+      padding: 0.9rem 1.5rem;
+      background: var(--primary);
+      color: white;
+      border-radius: var(--radius-lg);
+      font-size: 0.97rem;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+    .btn-calc svg {
+      width: 18px; height: 18px;
+      stroke: white; fill: none;
+      stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round;
+    }
+
+    /* ============================================================
+       RESULTS
+    ============================================================ */
+    #results { display: none; }
+
+    .result-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+      margin-bottom: 0.75rem;
+    }
+    @media (max-width: 360px) { .result-grid { grid-template-columns: 1fr; } }
+
+    .result-team {
+      padding: 1.1rem;
+      border-radius: var(--radius-lg);
+      border: 1.5px solid var(--border);
+      text-align: center;
+    }
+    .result-team.win  { background: var(--green-bg);    border-color: #86EFAC;          }
+    .result-team.lose { background: var(--primary-light); border-color: var(--primary-100); }
+
+    .result-team-name {
+      font-size: 0.7rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      margin-bottom: 0.35rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.25rem;
+    }
+    .result-team.win  .result-team-name { color: var(--green);       }
+    .result-team.lose .result-team-name { color: var(--primary-dark); }
+
+    .result-pts {
+      font-size: 2rem;
+      font-weight: 500;
+      line-height: 1;
+    }
+    .result-team.win  .result-pts { color: var(--green);        }
+    .result-team.lose .result-pts { color: var(--primary-dark); }
+
+    .result-pts-label {
+      font-size: 0.72rem;
+      color: var(--text-light);
+      margin-top: 0.25rem;
+    }
+    .result-pts-sub {
+      font-size: 0.68rem;
+      color: var(--text-light);
+      margin-top: 0.3rem;
+      padding-top: 0.3rem;
+      border-top: 1px solid rgba(0,0,0,0.06);
+      line-height: 1.35;
+    }
+
+    /* Banners */
+    .banner {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.6rem;
+      padding: 0.8rem 1rem;
+      border-radius: var(--radius-lg);
+      font-size: 0.82rem;
+      font-weight: 500;
+      margin-top: 0.75rem;
+      line-height: 1.45;
+    }
+    .banner-yellow { background: var(--yellow-bg); color: var(--yellow); border: 1px solid #FDE68A; }
+    .banner-blue   { background: #EFF6FF; color: #1D4ED8; border: 1px solid #BFDBFE; }
+    .banner-icon { font-size: 1rem; flex-shrink: 0; line-height: 1.5; }
+    .banner strong { font-weight: 500; }
+
+    /* ============================================================
+       TEAMS TABLE
+    ============================================================ */
+    .screen-header { margin-bottom: 1.25rem; }
+    .screen-title {
+      font-size: 1.1rem;
+      font-weight: 500;
+      color: var(--text-dark);
+      margin-bottom: 0.2rem;
+    }
+    .screen-sub { font-size: 0.82rem; color: var(--text-light); }
+
+    /* Liste des équipes — sobre, blanc & orange */
+    .teams-list {
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+    }
+    .teams-list-header {
+      display: grid;
+      grid-template-columns: 44px 1fr 70px;
+      align-items: center;
+      padding: 0.8rem 1.2rem;
+      border-bottom: 2px solid var(--primary);
+      background: var(--white);
+    }
+    .teams-list-header > div {
+      font-size: 0.68rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--primary);
+    }
+    .teams-list-header .col-rank { text-align: center; }
+    .teams-list-header .col-cote { text-align: center; }
+
+    .team-row {
+      display: grid;
+      grid-template-columns: 44px 1fr 70px;
+      align-items: center;
+      padding: 0.75rem 1.2rem;
+      border-bottom: 1px solid var(--border);
+      transition: background 0.12s;
+    }
+    .team-row:last-child { border-bottom: none; }
+    .team-row:hover { background: var(--primary-light); }
+
+    .team-row .col-rank {
+      font-size: 0.88rem;
+      font-weight: 500;
+      color: var(--text-light);
+      font-variant-numeric: tabular-nums;
+      text-align: center;
+    }
+    .team-row .col-name {
+      font-size: 0.94rem;
+      color: var(--text-dark);
+      font-weight: 500;
+      line-height: 1.35;
+      min-width: 0;
+    }
+    .team-row .col-cote {
+      text-align: center;
+      font-size: 1.15rem;
+      font-weight: 500;
+      color: var(--primary);
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+    }
+
+    @media (max-width: 440px) {
+      .teams-list-header,
+      .team-row {
+        grid-template-columns: 32px 1fr 56px;
+        padding: 0.7rem 0.95rem;
+      }
+      .team-row .col-name { font-size: 0.88rem; }
+      .team-row .col-cote { font-size: 1.05rem; }
+      .team-row .col-rank { font-size: 0.82rem; }
+    }
+
+    /* ============================================================
+       FOOTER
+    ============================================================ */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 1rem 1.25rem;
+      text-align: center;
+    }
+    .footer-inner { max-width: 720px; margin: 0 auto; }
+    .footer-rules {
+      font-size: 0.72rem;
+      color: var(--text-light);
+      line-height: 1.8;
+    }
+    .footer-sep { margin: 0 0.35rem; opacity: 0.4; }
+    .footer-credit { font-size: 0.68rem; color: #CBD5E1; margin-top: 0.35rem; }
+
+    /* ============================================================
+       Responsive
+    ============================================================ */
+    @media (max-width: 500px) {
+      .card { padding: 1.1rem; }
+      .header-date { display: none; }
+      .result-pts { font-size: 1.65rem; }
+    }
+
+    /* ============================================================
+       === NOUVEAUX COMPOSANTS — Tournoi (Firebase) ===
+    ============================================================ */
+
+    .hidden { display: none !important; }
+
+    /* Tabs scroll horizontal sur petit écran */
+    .tabs-inner { overflow-x: auto; scrollbar-width: none; }
+    .tabs-inner::-webkit-scrollbar { display: none; }
+
+    /* Barre de tri */
+    .sort-bar {
+      display: flex;
+      gap: 0.4rem;
+      margin-bottom: 0.9rem;
+      flex-wrap: wrap;
+    }
+    .sort-btn {
+      padding: 0.45rem 0.85rem;
+      font-size: 0.78rem;
+      font-weight: 500;
+      color: var(--text-light);
+      border: 1.5px solid var(--border);
+      border-radius: 9999px;
+      background: var(--white);
+      transition: all 0.15s;
+    }
+    .sort-btn:hover { border-color: var(--primary); color: var(--primary); }
+    .sort-btn.active {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: white;
+    }
+
+    /* Liste équipes — 4 colonnes quand données live disponibles */
+    .teams-list.with-points .teams-list-header,
+    .teams-list.with-points .team-row {
+      grid-template-columns: 36px 1fr 46px 60px;
+      gap: 0.4rem;
+    }
+    .teams-list.with-points .team-row,
+    .team-row.clickable { cursor: pointer; }
+    .teams-list.with-points .team-row .col-points {
+      text-align: center;
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--primary);
+      font-variant-numeric: tabular-nums;
+    }
+    .teams-list.with-points .teams-list-header .col-points {
+      text-align: center;
+    }
+    .teams-list.with-points .team-row .col-cote {
+      font-size: 0.95rem;
+      font-weight: 500;
+      color: var(--text);
+    }
+    @media (max-width: 440px) {
+      .teams-list.with-points .teams-list-header,
+      .teams-list.with-points .team-row {
+        grid-template-columns: 28px 1fr 38px 48px;
+        padding: 0.7rem 0.8rem;
+      }
+      .teams-list.with-points .team-row .col-points { font-size: 0.95rem; }
+    }
+
+    /* Back link */
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      font-size: 0.85rem;
+      color: var(--text-light);
+      padding: 0.4rem 0;
+      margin-bottom: 0.8rem;
+      font-weight: 500;
+    }
+    .back-link svg {
+      width: 16px; height: 16px;
+      stroke: currentColor; fill: none;
+      stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+    }
+    .back-link:hover { color: var(--primary); }
+
+    /* ===== Profil équipe ===== */
+    .profile-header {
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      padding: 1.4rem 1.3rem;
+      margin-bottom: 1.2rem;
+      text-align: center;
+    }
+    .profile-name {
+      font-size: 1.15rem;
+      font-weight: 500;
+      color: var(--text-dark);
+      margin-bottom: 0.3rem;
+      line-height: 1.3;
+    }
+    .profile-rank {
+      font-size: 0.78rem;
+      color: var(--text-light);
+      margin-bottom: 1rem;
+    }
+    .profile-score {
+      font-size: 3.2rem;
+      font-weight: 600;
+      color: var(--primary);
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.02em;
+    }
+    .profile-score-label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-light);
+      margin-top: 0.5rem;
+      font-weight: 500;
+    }
+    .profile-cote {
+      display: inline-block;
+      margin-top: 0.9rem;
+      padding: 0.25rem 0.7rem;
+      background: var(--primary-light);
+      color: var(--primary-dark);
+      border-radius: 9999px;
+      font-size: 0.78rem;
+      font-weight: 500;
+    }
+
+    /* Stats grid */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.65rem;
+      margin-bottom: 1.2rem;
+    }
+    .stat-card {
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 0.85rem 0.9rem;
+    }
+    .stat-label {
+      font-size: 0.68rem;
+      color: var(--text-light);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 500;
+      margin-bottom: 0.3rem;
+    }
+    .stat-value {
+      font-size: 1.05rem;
+      font-weight: 500;
+      color: var(--text-dark);
+      line-height: 1.25;
+    }
+    .stat-card.wide { grid-column: span 2; }
+
+    /* Barre V/D */
+    .vd-bar-wrap {
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 1rem;
+      margin-bottom: 1.2rem;
+    }
+    .vd-bar-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: var(--text-light);
+      margin-bottom: 0.5rem;
+    }
+    .vd-bar {
+      display: flex;
+      height: 12px;
+      border-radius: 9999px;
+      overflow: hidden;
+      background: var(--bg);
+    }
+    .vd-bar-win  { background: var(--primary); }
+    .vd-bar-loss { background: #CBD5E1; }
+
+    /* Historique des matchs */
+    .match-card {
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 0.9rem 1rem;
+      margin-bottom: 0.6rem;
+    }
+    .match-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.55rem;
+      gap: 0.5rem;
+    }
+    .match-date {
+      font-size: 0.72rem;
+      color: var(--text-light);
+    }
+    .match-result-badge {
+      font-size: 0.7rem;
+      font-weight: 500;
+      padding: 0.15rem 0.55rem;
+      border-radius: 9999px;
+    }
+    .match-result-badge.win  { background: #DCFCE7;          color: #166534; }
+    .match-result-badge.loss { background: var(--primary-light); color: var(--primary-dark); }
+
+    .match-teams {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.4rem;
+      align-items: center;
+      margin-bottom: 0.55rem;
+    }
+    .match-team {
+      font-size: 0.88rem;
+      color: var(--text-dark);
+      font-weight: 500;
+    }
+    .match-team.winner { color: var(--text-dark); font-weight: 500; }
+    .match-team.lost   { color: var(--text-light); }
+    .match-trophy { font-size: 0.95rem; }
+    .match-team .team-pts {
+      font-size: 0.78rem;
+      color: var(--primary);
+      font-weight: 500;
+      margin-left: 0.3rem;
+    }
+    .match-team.lost .team-pts { color: var(--text-light); }
+    .match-team-b { text-align: right; }
+    .match-vs {
+      font-size: 0.7rem;
+      color: var(--text-light);
+      text-align: center;
+      padding: 0 0.3rem;
+    }
+
+    .match-scores {
+      display: flex;
+      gap: 0.3rem;
+      flex-wrap: wrap;
+      font-size: 0.8rem;
+      color: var(--text-light);
+      padding-top: 0.55rem;
+      border-top: 1px solid var(--border);
+    }
+    .match-scores .set {
+      font-variant-numeric: tabular-nums;
+      padding: 0.1rem 0.4rem;
+      background: var(--bg);
+      border-radius: 4px;
+    }
+
+    /* ===== Step indicator (saisie) ===== */
+    .step-indicator {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      margin-bottom: 1.3rem;
+    }
+    .step-dot {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: var(--bg);
+      border: 1.5px solid var(--border);
+      color: var(--text-light);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.85rem;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+    .step-dot.active {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: white;
+    }
+    .step-dot.done {
+      background: var(--primary-light);
+      border-color: var(--primary);
+      color: var(--primary-dark);
+    }
+    .step-line {
+      width: 36px;
+      height: 1.5px;
+      background: var(--border);
+    }
+    .step-line.done { background: var(--primary); }
+
+    /* PIN input + status */
+    .pin-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+    .pin-input {
+      letter-spacing: 0.5em;
+      font-size: 1.2rem;
+      text-align: center;
+      padding-right: 2.5rem;
+    }
+    .pin-status {
+      position: absolute;
+      right: 0.7rem;
+      width: 22px;
+      height: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+    }
+    .pin-status.ok    { color: var(--green); }
+    .pin-status.error { color: var(--red); }
+    .pin-status.loading { color: var(--text-light); }
+    .pin-error {
+      font-size: 0.78rem;
+      color: var(--red);
+      margin-top: 0.3rem;
+      min-height: 1rem;
+    }
+
+    /* Ghost button */
+    .ghost-btn {
+      width: 100%;
+      padding: 0.6rem 1rem;
+      background: transparent;
+      border: 1.5px dashed var(--border);
+      border-radius: var(--radius);
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text-light);
+      transition: all 0.15s;
+    }
+    .ghost-btn:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+    .ghost-btn.active {
+      border-style: solid;
+      color: var(--primary);
+      border-color: var(--primary);
+    }
+
+    /* Save status */
+    .save-status {
+      font-size: 0.85rem;
+      margin-top: 0.7rem;
+      text-align: center;
+      min-height: 1rem;
+    }
+    .save-status.ok    { color: var(--green); font-weight: 500; }
+    .save-status.error { color: var(--red); }
+
+    /* Score input */
+    .score-input {
+      font-size: 1.05rem;
+      letter-spacing: 0.08em;
+      text-align: center;
+      max-width: 110px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ===== Admin ===== */
+    .footer-admin {
+      background: none;
+      border: none;
+      color: var(--text-light);
+      opacity: 0.5;
+      font-size: 0.68rem;
+      cursor: pointer;
+      text-decoration: underline;
+      font-family: inherit;
+    }
+    .footer-admin:hover { opacity: 1; color: var(--primary); }
+
+    .admin-pin-row {
+      display: grid;
+      grid-template-columns: 1fr 80px auto;
+      gap: 0.5rem;
+      align-items: center;
+      padding: 0.55rem 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.85rem;
+    }
+    .admin-pin-row:last-child { border-bottom: none; }
+    .admin-pin-row input {
+      padding: 0.4rem 0.55rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 0.9rem;
+      text-align: center;
+      letter-spacing: 0.15em;
+      font-family: inherit;
+    }
+    .admin-pin-actions {
+      display: flex;
+      gap: 0.3rem;
+    }
+    .admin-pin-row button {
+      padding: 0.4rem 0.55rem;
+      font-size: 0.72rem;
+      background: var(--primary);
+      color: white;
+      border-radius: 6px;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+    .admin-pin-row button:hover { background: var(--primary-dark); }
+    .admin-pin-row .admin-del-btn {
+      background: var(--red-bg);
+      color: var(--red);
+    }
+    .admin-pin-row .admin-del-btn:hover { background: var(--red); color: white; }
+
+    @media (max-width: 500px) {
+      .admin-pin-row {
+        grid-template-columns: 1fr;
+        gap: 0.4rem;
+        padding: 0.7rem 0;
+      }
+      .admin-pin-actions { justify-content: flex-end; }
+    }
+
+    .admin-match-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      padding: 0.6rem 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.82rem;
+    }
+    .admin-match-row:last-child { border-bottom: none; }
+    .admin-match-info { flex: 1; min-width: 0; }
+    .admin-match-info .a-teams { color: var(--text-dark); font-weight: 500; }
+    .admin-match-info .a-date  { color: var(--text-light); font-size: 0.72rem; margin-top: 0.15rem; }
+    .admin-match-actions {
+      display: flex;
+      gap: 0.4rem;
+      flex-shrink: 0;
+    }
+    .admin-edit-btn {
+      padding: 0.4rem 0.6rem;
+      background: var(--primary-light);
+      color: var(--primary-dark);
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 500;
+    }
+    .admin-edit-btn:hover { background: var(--primary); color: white; }
+    .admin-del-btn {
+      padding: 0.4rem 0.6rem;
+      background: var(--red-bg);
+      color: var(--red);
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 500;
+    }
+    .admin-del-btn:hover { background: var(--red); color: white; }
+
+    /* ===== Modale d'édition ===== */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.55);
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      backdrop-filter: blur(2px);
+    }
+    .modal-box {
+      background: var(--white);
+      border-radius: var(--radius-xl);
+      max-width: 480px;
+      width: 100%;
+      max-height: 90vh;
+      overflow-y: auto;
+      padding: 1.4rem;
+      box-shadow: var(--shadow-lg);
+    }
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1rem;
+      padding-bottom: 0.8rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .modal-title {
+      font-size: 0.78rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
+      color: var(--primary);
+    }
+    .modal-close {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--bg);
+      color: var(--text-light);
+      font-size: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-close:hover { background: var(--border); color: var(--text-dark); }
+    .modal-teams-header {
+      font-size: 0.9rem;
+      color: var(--text-dark);
+      padding: 0.75rem 0.9rem;
+      background: var(--bg);
+      border-radius: var(--radius);
+      margin-bottom: 1.1rem;
+      text-align: center;
+      line-height: 1.4;
+    }
+    .modal-teams-header strong { color: var(--primary-dark); font-weight: 500; }
+    .modal-actions {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 1.2rem;
+    }
+    .modal-actions button { flex: 1; }
+    .btn-cancel {
+      padding: 0.85rem 1.2rem;
+      background: var(--white);
+      color: var(--text);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-lg);
+      font-size: 0.92rem;
+      font-weight: 500;
+    }
+    .btn-cancel:hover { border-color: var(--text-light); color: var(--text-dark); }
+
+    .seed-pin-list {
+      background: var(--primary-light);
+      border: 1px solid var(--primary-100);
+      border-radius: var(--radius);
+      padding: 0.9rem;
+      font-size: 0.8rem;
+      max-height: 360px;
+      overflow-y: auto;
+    }
+    .seed-pin-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 0.25rem 0;
+      border-bottom: 1px dashed rgba(196,92,0,0.15);
+    }
+    .seed-pin-item:last-child { border-bottom: none; }
+    .seed-pin-item .pin-val {
+      font-family: ui-monospace, monospace;
+      color: var(--primary-dark);
+      font-weight: 500;
+      letter-spacing: 0.15em;
+    }
+
+    /* Bannière "Vainqueur" dans la saisie */
+    .winner-banner {
+      display: flex;
+      align-items: center;
+      gap: 0.8rem;
+      padding: 0.85rem 1rem;
+      background: var(--green-bg);
+      border: 1px solid #86EFAC;
+      border-radius: var(--radius-lg);
+      margin-bottom: 0.75rem;
+    }
+    .winner-icon {
+      font-size: 1.4rem;
+      flex-shrink: 0;
+    }
+    .winner-text { flex: 1; min-width: 0; }
+    .winner-label {
+      font-size: 0.68rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--green);
+      margin-bottom: 0.15rem;
+    }
+    .winner-name {
+      font-size: 1rem;
+      font-weight: 500;
+      color: #166534;
+      line-height: 1.3;
+    }
+
+    /* Zone dangereuse */
+    .danger-card { border-color: #FCA5A5; background: #FFFBFB; }
+    .danger-title { color: var(--red); }
+    .btn-danger {
+      width: 100%;
+      padding: 0.75rem 1.2rem;
+      background: var(--white);
+      color: var(--red);
+      border: 1.5px solid var(--red);
+      border-radius: var(--radius);
+      font-size: 0.88rem;
+      font-weight: 500;
+      transition: all 0.15s;
+    }
+    .btn-danger:hover { background: var(--red); color: white; }
+    .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ===== Toggle Adulte / Junior ===== */
+    .mode-toggle {
+      display: flex;
+      gap: 0;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 9999px;
+      padding: 2px;
+      flex-shrink: 0;
+    }
+    .mode-btn {
+      padding: 0.35rem 0.85rem;
+      font-size: 0.72rem;
+      font-weight: 500;
+      color: var(--text-light);
+      border-radius: 9999px;
+      letter-spacing: 0.02em;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .mode-btn.active {
+      background: var(--primary);
+      color: white;
+    }
+    .mode-btn:not(.active):hover { color: var(--text-dark); }
+
+    /* En mode adulte → on cache les onglets junior, et vice versa */
+    body[data-mode="adult"]  .tab-junior { display: none; }
+    body[data-mode="junior"] #tab-calc,
+    body[data-mode="junior"] #tab-teams,
+    body[data-mode="junior"] #tab-result,
+    body[data-mode="junior"] #tab-matches { display: none; }
+
+    /* Junior : étoiles */
+    .stars-display {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.15rem;
+      font-size: 0.95rem;
+      color: #F59E0B;
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
+    }
+    .stars-display .star-count {
+      color: var(--primary);
+      margin-left: 0.3rem;
+      font-weight: 600;
+    }
+
+    /* Badge "joueur vert" */
+    .green-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #BBF7D0;
+      color: #166534;
+      font-size: 0.55rem;
+      margin-left: 0.3rem;
+      flex-shrink: 0;
+    }
+
+    /* Loading state */
+    .loading-state {
+      text-align: center;
+      padding: 2rem 1rem;
+      color: var(--text-light);
+      font-size: 0.9rem;
+    }
+    .empty-state {
+      text-align: center;
+      padding: 1.5rem;
+      color: var(--text-light);
+      font-size: 0.85rem;
+      background: var(--white);
+      border: 1px dashed var(--border);
+      border-radius: var(--radius-lg);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header class="header">
+    <div class="header-inner">
+      <div class="header-brand">
+        <div class="header-logo">
+          <img src="logo_tcm.png" alt="Tennis Club Morgins">
+        </div>
+        <div>
+          <div class="header-title">Défi Double</div>
+          <div class="header-sub">TC Morgins</div>
+        </div>
+      </div>
+      <div class="mode-toggle" role="tablist">
+        <button class="mode-btn active" data-mode="adult"  onclick="switchMode('adult')" id="mode-adult">Adulte</button>
+        <button class="mode-btn"        data-mode="junior" onclick="switchMode('junior')" id="mode-junior">Junior</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- TABS -->
+  <nav class="tabs">
+    <div class="tabs-inner">
+      <button class="tab-btn active" onclick="switchTab('calc')" id="tab-calc">
+        <svg viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="10" x2="16" y2="10"/><line x1="8" y1="14" x2="16" y2="14"/><line x1="8" y1="6" x2="12" y2="6"/></svg>
+        Calculatrice
+      </button>
+      <button class="tab-btn" onclick="switchTab('teams')" id="tab-teams">
+        <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Équipes
+      </button>
+      <button class="tab-btn" onclick="switchTab('result')" id="tab-result">
+        <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+        Saisie
+      </button>
+      <button class="tab-btn" onclick="switchTab('matches')" id="tab-matches">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+        Matchs
+      </button>
+
+      <!-- Onglets JUNIOR (cachés en mode adulte) -->
+      <button class="tab-btn tab-junior" onclick="switchTab('jplayers')" id="tab-jplayers">
+        <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+        Joueurs
+      </button>
+      <button class="tab-btn tab-junior" onclick="switchTab('jresult')" id="tab-jresult">
+        <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+        Saisie
+      </button>
+      <button class="tab-btn tab-junior" onclick="switchTab('jmatches')" id="tab-jmatches">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+        Matchs
+      </button>
+    </div>
+  </nav>
+
+  <!-- MAIN -->
+  <main>
+    <div class="content-wrap">
+
+      <!-- ====== ÉCRAN CALCULATRICE ====== -->
+      <div class="screen active" id="screen-calc">
+
+        <div class="card">
+          <div class="card-title">Simulateur de match</div>
+
+          <!-- Cotes -->
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">
+                <span class="team-badge badge-a">A</span>
+                Cote Équipe A
+              </label>
+              <input type="number" class="form-input" id="coteA"
+                     placeholder="ex. 14" min="1" max="20" inputmode="numeric">
+            </div>
+            <div class="form-group">
+              <label class="form-label">
+                <span class="team-badge badge-b">B</span>
+                Cote Équipe B
+              </label>
+              <input type="number" class="form-input" id="coteB"
+                     placeholder="ex. 6" min="1" max="20" inputmode="numeric">
+            </div>
+          </div>
+
+          <div class="form-divider"></div>
+
+          <!-- Vainqueur -->
+          <div class="form-group" style="margin-bottom: 1.1rem;">
+            <label class="form-label" style="margin-bottom: 0.45rem;">Qui a gagné ?</label>
+            <div class="radio-group">
+              <label class="radio-label">
+                <input type="radio" name="winner" value="A">
+                <span class="radio-dot"></span>
+                <span class="team-badge badge-a" style="width:15px;height:15px;font-size:0.6rem;">A</span>
+                Équipe A
+              </label>
+              <label class="radio-label">
+                <input type="radio" name="winner" value="B">
+                <span class="radio-dot"></span>
+                <span class="team-badge badge-b" style="width:15px;height:15px;font-size:0.6rem;">B</span>
+                Équipe B
+              </label>
+            </div>
+          </div>
+
+          <!-- 3 sets -->
+          <div class="form-group" style="margin-bottom: 1.5rem;">
+            <label class="form-label" style="margin-bottom: 0.45rem;">Match en 3 sets ?</label>
+            <div class="radio-group">
+              <label class="radio-label">
+                <input type="radio" name="sets" value="yes">
+                <span class="radio-dot"></span>
+                Oui — défaite 2-1
+              </label>
+              <label class="radio-label">
+                <input type="radio" name="sets" value="no" checked>
+                <span class="radio-dot"></span>
+                Non — 2-0
+              </label>
+            </div>
+          </div>
+
+          <button class="btn-calc" onclick="calculate()">
+            <svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            Calculer les points
+          </button>
+        </div>
+
+        <!-- Résultat -->
+        <div class="card" id="results">
+          <div class="card-title">Résultat</div>
+          <div class="result-grid" id="resultGrid"></div>
+          <div id="banners"></div>
+        </div>
+
+      </div><!-- /screen-calc -->
+
+      <!-- ====== ÉCRAN ÉQUIPES ====== -->
+      <div class="screen" id="screen-teams">
+        <div class="screen-header">
+          <div class="screen-title">Équipes du tournoi</div>
+          <div class="screen-sub" id="teamsSub">Cotes fixes de départ — Tournoi 2026</div>
+        </div>
+
+        <!-- Boutons de tri -->
+        <div class="sort-bar" id="sortBar">
+          <button class="sort-btn active" data-sort="points" onclick="setTeamsSort('points')">Classement</button>
+          <button class="sort-btn"        data-sort="cote"   onclick="setTeamsSort('cote')">Par cote</button>
+          <button class="sort-btn"        data-sort="alpha"  onclick="setTeamsSort('alpha')">A → Z</button>
+        </div>
+
+        <div class="teams-list" id="teamsList">
+          <div class="teams-list-header">
+            <div class="col-rank">N°</div>
+            <div class="col-name">Équipe</div>
+            <div class="col-cote">Cote</div>
+          </div>
+          <div id="teamsBody">
+            <!-- Rempli par JS -->
+          </div>
+        </div>
+      </div><!-- /screen-teams -->
+
+      <!-- ====== ÉCRAN PROFIL ÉQUIPE ====== -->
+      <div class="screen" id="screen-profile">
+        <button class="back-link" onclick="switchTab('teams')">
+          <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+          Retour aux équipes
+        </button>
+        <div id="profileBody"><!-- Rempli par JS --></div>
+      </div>
+
+      <!-- ====== ÉCRAN SAISIE D'UN RÉSULTAT ====== -->
+      <div class="screen" id="screen-result">
+        <div class="screen-header">
+          <div class="screen-title">Saisir un résultat</div>
+          <div class="screen-sub">Les deux équipes doivent entrer leur code PIN</div>
+        </div>
+
+        <!-- Indicateur d'étapes -->
+        <div class="step-indicator">
+          <div class="step-dot active" id="dot-1">1</div>
+          <div class="step-line" id="line-1"></div>
+          <div class="step-dot" id="dot-2">2</div>
+          <div class="step-line" id="line-2"></div>
+          <div class="step-dot" id="dot-3">3</div>
+        </div>
+
+        <!-- Étape 1 — Équipe A -->
+        <div class="card step-card" id="step-1">
+          <div class="card-title">Étape 1 — Équipe A</div>
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <label class="form-label">Sélectionne ton équipe</label>
+            <select class="form-input" id="selectA" onchange="onSelectA()">
+              <option value="">— Choisir une équipe —</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Code PIN (4 chiffres)</label>
+            <div class="pin-wrap">
+              <input type="password" inputmode="numeric" maxlength="4" pattern="[0-9]{4}"
+                     class="form-input pin-input" id="pinA" oninput="onPinAInput()" autocomplete="off">
+              <div class="pin-status" id="pinStatusA"></div>
+            </div>
+            <div class="pin-error" id="pinErrorA"></div>
+          </div>
+        </div>
+
+        <!-- Étape 2 — Équipe B -->
+        <div class="card step-card hidden" id="step-2">
+          <div class="card-title">Étape 2 — Équipe B</div>
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <label class="form-label">Équipe adverse</label>
+            <select class="form-input" id="selectB" onchange="onSelectB()">
+              <option value="">— Choisir une équipe —</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Code PIN (4 chiffres)</label>
+            <div class="pin-wrap">
+              <input type="password" inputmode="numeric" maxlength="4" pattern="[0-9]{4}"
+                     class="form-input pin-input" id="pinB" oninput="onPinBInput()" autocomplete="off">
+              <div class="pin-status" id="pinStatusB"></div>
+            </div>
+            <div class="pin-error" id="pinErrorB"></div>
+          </div>
+        </div>
+
+        <!-- Étape 3 — Score du match -->
+        <div class="card step-card hidden" id="step-3">
+          <div class="card-title">Étape 3 — Score du match</div>
+
+          <!-- Qui a gagné -->
+          <div class="form-group" style="margin-bottom: 1.1rem;">
+            <label class="form-label" style="margin-bottom: 0.45rem;">Qui a gagné ?</label>
+            <div class="radio-group" id="winnerRadios">
+              <label class="radio-label">
+                <input type="radio" name="winnerR" value="A" onchange="renderResultPreview()">
+                <span class="team-badge badge-a" style="width:15px;height:15px;font-size:0.6rem;">A</span>
+                <span id="winnerLabelA">Équipe A</span>
+              </label>
+              <label class="radio-label">
+                <input type="radio" name="winnerR" value="B" onchange="renderResultPreview()">
+                <span class="team-badge badge-b" style="width:15px;height:15px;font-size:0.6rem;">B</span>
+                <span id="winnerLabelB">Équipe B</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Scores set par set -->
+          <div class="form-group" style="margin-bottom: 0.9rem;">
+            <label class="form-label">Set 1</label>
+            <input type="text" class="form-input score-input" id="score1" placeholder="ex. 6-3" maxlength="5">
+          </div>
+          <div class="form-group" style="margin-bottom: 0.9rem;">
+            <label class="form-label">Set 2</label>
+            <input type="text" class="form-input score-input" id="score2" placeholder="ex. 7-5" maxlength="5">
+          </div>
+
+          <!-- Set 3 (optionnel — super tie-break) -->
+          <button class="ghost-btn" id="addSet3Btn" onclick="toggleSet3()" type="button">+ Ajouter un 3ème set (super tie-break)</button>
+          <div class="form-group hidden" id="score3Wrap" style="margin-top: 0.9rem;">
+            <label class="form-label">Set 3 <span style="color:var(--text-light);font-weight:400;">(super tie-break)</span></label>
+            <input type="text" class="form-input score-input" id="score3" placeholder="ex. 10-7" maxlength="5" oninput="renderResultPreview()">
+          </div>
+
+          <!-- Aperçu du calcul -->
+          <div id="resultPreview" style="margin-top: 1.2rem;"></div>
+
+          <!-- Bouton enregistrer -->
+          <button class="btn-calc" style="margin-top: 1.2rem;" onclick="confirmAndSave()" id="saveBtn">
+            <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+            Confirmer et enregistrer
+          </button>
+          <div class="save-status" id="saveStatus"></div>
+        </div>
+      </div><!-- /screen-result -->
+
+      <!-- ====== ÉCRAN HISTORIQUE DES MATCHS ====== -->
+      <div class="screen" id="screen-matches">
+        <div class="screen-header">
+          <div class="screen-title">Résultats des matchs</div>
+          <div class="screen-sub" id="matchesSub">Du plus récent au plus ancien</div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label class="form-label">Filtrer par équipe</label>
+          <select class="form-input" id="matchesFilter" onchange="renderMatchesList()">
+            <option value="">Tous les matchs</option>
+          </select>
+        </div>
+
+        <div id="matchesBody"><!-- Rempli par JS --></div>
+      </div><!-- /screen-matches -->
+
+      <!-- ====== ÉCRAN ADMIN ====== -->
+      <div class="screen" id="screen-admin">
+        <button class="back-link" onclick="switchTab('teams')">
+          <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+          Retour
+        </button>
+
+        <!-- Verrouillage / Setup admin -->
+        <div class="card" id="adminLock">
+          <div class="card-title" id="adminLockTitle">Accès administrateur</div>
+
+          <!-- Première utilisation : choisir un code -->
+          <div id="adminSetup" class="hidden">
+            <div style="font-size:0.85rem;color:var(--text-light);margin-bottom:0.9rem;line-height:1.5;">
+              <strong style="color:var(--text-dark);">Première utilisation.</strong>
+              Choisis ton code admin (6 à 20 caractères). Le code est hashé (SHA-256) : il n'apparaît jamais dans le code source ni sur GitHub. À toi de bien le retenir.
+            </div>
+            <div class="form-group" style="margin-bottom: 0.9rem;">
+              <label class="form-label">Nouveau code admin</label>
+              <input type="password" maxlength="20" class="form-input" id="newAdminPin" autocomplete="off">
+            </div>
+            <div class="form-group" style="margin-bottom: 0.9rem;">
+              <label class="form-label">Confirmer</label>
+              <input type="password" maxlength="20" class="form-input" id="newAdminPin2" autocomplete="off">
+            </div>
+            <button class="btn-calc" onclick="setupAdmin()" id="setupBtn">Enregistrer le code admin</button>
+            <div class="save-status" id="setupStatus"></div>
+          </div>
+
+          <!-- Connexion normale -->
+          <div id="adminLogin">
+            <div class="form-group">
+              <label class="form-label">Code admin</label>
+              <input type="password" maxlength="20" class="form-input" id="adminPin"
+                     oninput="onAdminPinInput()" autocomplete="off">
+              <div class="pin-error" id="adminError"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Panneau admin -->
+        <div id="adminPanel" class="hidden">
+          <!-- Initialisation tournoi -->
+          <div class="card" id="seedCard">
+            <div class="card-title">Initialisation du tournoi</div>
+            <div style="font-size: 0.85rem; color: var(--text-light); margin-bottom: 0.8rem;">
+              À faire une seule fois en début de saison. Génère les 22 équipes dans Firestore avec un PIN aléatoire chacune.
+            </div>
+            <button class="btn-calc" onclick="seedTeams()" id="seedBtn">Générer les équipes + PINs</button>
+            <div id="seedResult" style="margin-top: 1rem;"></div>
+          </div>
+
+          <!-- Ajouter une équipe -->
+          <div class="card">
+            <div class="card-title">Ajouter une équipe</div>
+            <div style="font-size:0.82rem;color:var(--text-light);margin-bottom:0.9rem;line-height:1.5;">
+              Crée une nouvelle équipe dans Firestore (PIN aléatoire chiffré comme les autres).
+              Utile si une équipe rejoint le tournoi en cours de route.
+            </div>
+            <div class="form-group" style="margin-bottom: 0.7rem;">
+              <label class="form-label">Nom de l'équipe</label>
+              <input type="text" class="form-input" id="newTeamName" placeholder="ex. Cynthia Berra / Charly Berra" maxlength="60">
+            </div>
+            <div class="form-group" style="margin-bottom: 0.9rem;">
+              <label class="form-label">Cote de départ</label>
+              <input type="number" class="form-input" id="newTeamCote" placeholder="ex. 6" min="1" max="30">
+            </div>
+            <button class="btn-calc" onclick="addNewTeam()" id="addTeamBtn">Ajouter l'équipe</button>
+            <div id="addTeamStatus" class="save-status"></div>
+            <div id="addTeamPin"></div>
+          </div>
+
+          <!-- Gestion des PINs -->
+          <div class="card">
+            <div class="card-title">Codes PIN des équipes</div>
+            <div id="adminPinsList"><!-- Rempli par JS --></div>
+          </div>
+
+          <!-- Gestion des matchs -->
+          <div class="card">
+            <div class="card-title">Matchs enregistrés</div>
+            <div id="adminMatchesList"><!-- Rempli par JS --></div>
+          </div>
+
+          <!-- ─── SECTION JUNIOR ─── -->
+          <div class="card" style="border-top: 4px solid var(--primary);">
+            <div class="card-title">Ajouter un joueur junior</div>
+            <div class="form-group" style="margin-bottom:0.7rem;">
+              <label class="form-label">Nom du joueur</label>
+              <input type="text" class="form-input" id="newJName" placeholder="ex. Prénom Nom" maxlength="60">
+            </div>
+            <div class="form-group" style="margin-bottom:0.9rem;">
+              <label class="form-label">Catégorie verte ? (balles vertes)</label>
+              <div class="radio-group">
+                <label class="radio-label">
+                  <input type="radio" name="newJGreen" value="no" checked>Non
+                </label>
+                <label class="radio-label">
+                  <input type="radio" name="newJGreen" value="yes">🟢 Oui
+                </label>
+              </div>
+            </div>
+            <button class="btn-calc" onclick="addNewJunior()" id="addJBtn">Ajouter le joueur</button>
+            <div id="addJStatus" class="save-status"></div>
+            <div id="addJPin"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Codes PIN des joueurs juniors</div>
+            <div id="adminJPinsList"><!-- Rempli par JS --></div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Matchs juniors enregistrés</div>
+            <div id="adminJMatchesList"><!-- Rempli par JS --></div>
+          </div>
+
+          <!-- Outil de réparation -->
+          <div class="card">
+            <div class="card-title">Outil de réparation</div>
+            <div style="font-size:0.82rem;color:var(--text-light);margin-bottom:0.9rem;line-height:1.5;">
+              Si les compteurs de points sont incohérents (négatifs, etc.), ce bouton les recalcule depuis zéro
+              en additionnant les <code>pointsA</code> et <code>pointsB</code> de chaque match enregistré.
+              Aucun match n'est supprimé.
+            </div>
+            <button class="btn-calc" onclick="recomputeTeamPoints()" id="recomputeBtn">
+              Recalculer tous les compteurs
+            </button>
+            <div id="recomputeStatus" class="save-status"></div>
+          </div>
+
+          <!-- Zone dangereuse — Défi Double (Adulte) -->
+          <div class="card danger-card">
+            <div class="card-title danger-title">⚠️ Reset Défi Double (Adulte)</div>
+            <div style="font-size:0.82rem;color:var(--text-light);margin-bottom:0.9rem;line-height:1.5;">
+              Supprime <strong>tous les matchs du tournoi adulte</strong> et remet <strong>tous les compteurs de points à 0</strong>.
+              Les équipes et leurs codes PIN restent inchangés. Le tournoi <strong>junior n'est PAS touché</strong>.
+            </div>
+            <button class="btn-danger" onclick="resetTournament()" id="resetBtn">
+              Réinitialiser le Défi Double
+            </button>
+            <div id="resetStatus" class="save-status"></div>
+          </div>
+
+          <!-- Zone dangereuse — Défi Junior -->
+          <div class="card danger-card">
+            <div class="card-title danger-title">⚠️ Reset Défi Junior</div>
+            <div style="font-size:0.82rem;color:var(--text-light);margin-bottom:0.9rem;line-height:1.5;">
+              Supprime <strong>tous les matchs juniors</strong> et remet <strong>tous les compteurs d'étoiles à 0</strong>.
+              Les joueurs et leurs codes PIN restent inchangés. Le tournoi <strong>adulte n'est PAS touché</strong>.
+            </div>
+            <button class="btn-danger" onclick="resetJuniorTournament()" id="resetJBtn">
+              Réinitialiser le Défi Junior
+            </button>
+            <div id="resetJStatus" class="save-status"></div>
+          </div>
+        </div>
+      </div><!-- /screen-admin -->
+
+      <!-- ╔════════════════════════════════════════════════════╗
+           ║                ÉCRANS JUNIOR                       ║
+           ╚════════════════════════════════════════════════════╝ -->
+
+      <!-- ====== JOUEURS JUNIOR (Classement) ====== -->
+      <div class="screen" id="screen-jplayers">
+        <div class="screen-header">
+          <div class="screen-title">Joueurs du tournoi junior</div>
+          <div class="screen-sub" id="jplayersSub">Classement par étoiles</div>
+        </div>
+
+        <div class="sort-bar">
+          <button class="sort-btn active" data-jsort="stars" onclick="setJSort('stars')">Classement</button>
+          <button class="sort-btn"        data-jsort="alpha" onclick="setJSort('alpha')">A → Z</button>
+        </div>
+
+        <div class="teams-list" id="jplayersList">
+          <div class="teams-list-header">
+            <div class="col-rank">N°</div>
+            <div class="col-name">Joueur</div>
+            <div class="col-points">Étoiles</div>
+          </div>
+          <div id="jplayersBody"><!-- Rempli par JS --></div>
+        </div>
+
+        <div style="margin-top:1rem;font-size:0.78rem;color:var(--text-light);line-height:1.6;padding:0.85rem 1rem;background:var(--bg);border-radius:var(--radius-lg);">
+          ⭐⭐ <strong>Vainqueur</strong> = +2 étoiles · ⭐ <strong>Perdant</strong> = +1 étoile<br>
+          Format : <strong>short set à 4 jeux</strong> · 🟢 = catégorie verte (balles vertes obligatoires si un des deux est vert)
+        </div>
+      </div><!-- /screen-jplayers -->
+
+      <!-- ====== PROFIL JOUEUR JUNIOR ====== -->
+      <div class="screen" id="screen-jprofile">
+        <button class="back-link" onclick="switchTab('jplayers')">
+          <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+          Retour aux joueurs
+        </button>
+        <div id="jprofileBody"><!-- Rempli par JS --></div>
+      </div>
+
+      <!-- ====== SAISIE D'UN MATCH JUNIOR ====== -->
+      <div class="screen" id="screen-jresult">
+        <div class="screen-header">
+          <div class="screen-title">Saisir un match junior</div>
+          <div class="screen-sub">Les deux joueurs doivent entrer leur code PIN</div>
+        </div>
+
+        <div class="step-indicator">
+          <div class="step-dot active" id="jdot-1">1</div>
+          <div class="step-line" id="jline-1"></div>
+          <div class="step-dot" id="jdot-2">2</div>
+          <div class="step-line" id="jline-2"></div>
+          <div class="step-dot" id="jdot-3">3</div>
+        </div>
+
+        <!-- Étape 1 — Joueur A -->
+        <div class="card step-card" id="jstep-1">
+          <div class="card-title">Étape 1 — Joueur A</div>
+          <div class="form-group" style="margin-bottom:1rem;">
+            <label class="form-label">Sélectionne ton nom</label>
+            <select class="form-input" id="jselectA" onchange="onJSelectA()">
+              <option value="">— Choisir un joueur —</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Code PIN (4 chiffres)</label>
+            <div class="pin-wrap">
+              <input type="password" inputmode="numeric" maxlength="4" pattern="[0-9]{4}"
+                     class="form-input pin-input" id="jpinA" oninput="onJPinAInput()" autocomplete="off">
+              <div class="pin-status" id="jpinStatusA"></div>
+            </div>
+            <div class="pin-error" id="jpinErrorA"></div>
+          </div>
+        </div>
+
+        <!-- Étape 2 — Joueur B -->
+        <div class="card step-card hidden" id="jstep-2">
+          <div class="card-title">Étape 2 — Joueur B (adversaire)</div>
+          <div class="form-group" style="margin-bottom:1rem;">
+            <label class="form-label">Adversaire</label>
+            <select class="form-input" id="jselectB" onchange="onJSelectB()">
+              <option value="">— Choisir un joueur —</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Code PIN (4 chiffres)</label>
+            <div class="pin-wrap">
+              <input type="password" inputmode="numeric" maxlength="4" pattern="[0-9]{4}"
+                     class="form-input pin-input" id="jpinB" oninput="onJPinBInput()" autocomplete="off">
+              <div class="pin-status" id="jpinStatusB"></div>
+            </div>
+            <div class="pin-error" id="jpinErrorB"></div>
+          </div>
+        </div>
+
+        <!-- Étape 3 — Vainqueur + score -->
+        <div class="card step-card hidden" id="jstep-3">
+          <div class="card-title">Étape 3 — Score du match</div>
+
+          <div id="jgreenBallsBanner" class="banner banner-yellow hidden" style="margin-bottom:1.1rem;">
+            <span class="banner-icon">🟢</span>
+            <div><strong>Catégorie verte impliquée</strong> — Ce match doit se jouer avec des <strong>balles vertes</strong>.</div>
+          </div>
+
+          <div class="form-group" style="margin-bottom:1.1rem;">
+            <label class="form-label" style="margin-bottom:0.45rem;">Qui a gagné ?</label>
+            <div class="radio-group" id="jwinnerRadios">
+              <label class="radio-label">
+                <input type="radio" name="jwinnerR" value="A" onchange="renderJResultPreview()">
+                <span id="jwinnerLabelA">Joueur A</span>
+              </label>
+              <label class="radio-label">
+                <input type="radio" name="jwinnerR" value="B" onchange="renderJResultPreview()">
+                <span id="jwinnerLabelB">Joueur B</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-bottom:0.9rem;">
+            <label class="form-label">Set 1 <span style="color:var(--text-light);font-weight:400;">(short set à 4 jeux)</span></label>
+            <input type="text" class="form-input score-input" id="jscore1" placeholder="ex. 4-2" maxlength="5">
+          </div>
+          <div class="form-group" style="margin-bottom:0.9rem;">
+            <label class="form-label">Set 2 <span style="color:var(--text-light);font-weight:400;">(short set à 4 jeux)</span></label>
+            <input type="text" class="form-input score-input" id="jscore2" placeholder="ex. 4-3" maxlength="5">
+          </div>
+
+          <button class="ghost-btn" id="jaddSet3Btn" onclick="toggleJSet3()" type="button">+ Ajouter un 3ème set (tie-break)</button>
+          <div class="form-group hidden" id="jscore3Wrap" style="margin-top:0.9rem;">
+            <label class="form-label">Set 3 <span style="color:var(--text-light);font-weight:400;">(tie-break)</span></label>
+            <input type="text" class="form-input score-input" id="jscore3" placeholder="ex. 7-5" maxlength="5" oninput="renderJResultPreview()">
+          </div>
+
+          <div id="jresultPreview" style="margin-top:1.2rem;"></div>
+
+          <button class="btn-calc" style="margin-top:1.2rem;" onclick="confirmAndSaveJunior()" id="jsaveBtn">
+            <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+            Confirmer et enregistrer
+          </button>
+          <div class="save-status" id="jsaveStatus"></div>
+        </div>
+      </div><!-- /screen-jresult -->
+
+      <!-- ====== HISTORIQUE MATCHS JUNIOR ====== -->
+      <div class="screen" id="screen-jmatches">
+        <div class="screen-header">
+          <div class="screen-title">Matchs junior</div>
+          <div class="screen-sub" id="jmatchesSub">Du plus récent au plus ancien</div>
+        </div>
+
+        <div class="form-group" style="margin-bottom:1rem;">
+          <label class="form-label">Filtrer par joueur</label>
+          <select class="form-input" id="jmatchesFilter" onchange="renderJuniorMatchesList()">
+            <option value="">Tous les matchs</option>
+          </select>
+        </div>
+
+        <div id="jmatchesBody"><!-- Rempli par JS --></div>
+      </div><!-- /screen-jmatches -->
+
+    </div>
+  </main>
+
+  <!-- MODALE — Édition d'un match (admin) -->
+  <div class="modal-overlay hidden" id="editModal" onclick="closeEditModalIfBackdrop(event)">
+    <div class="modal-box" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <div class="modal-title">Modifier le match</div>
+        <button class="modal-close" onclick="closeEditModal()" aria-label="Fermer">✕</button>
+      </div>
+      <div id="editMatchBody"><!-- Rempli par openEditMatch --></div>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <footer>
+    <div class="footer-inner">
+      <div class="footer-rules">
+        Gagnant&nbsp;=&nbsp;+cote adverse
+        <span class="footer-sep">·</span>
+        Perdant&nbsp;=&nbsp;+1/2/3&nbsp;pts (selon cote)
+        <span class="footer-sep">·</span>
+        3&nbsp;sets&nbsp;=&nbsp;+1&nbsp;pt bonus pour le perdant
+      </div>
+      <div class="footer-credit">
+        TC Morgins — Défi Double 2026 ·
+        <button class="footer-admin" onclick="openAdmin()" aria-label="Accès admin">admin</button>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    /* ============================================================
+       DONNÉES — ÉQUIPES (liste mise à jour juin 2026)
+    ============================================================ */
+    const TEAMS = [
+      { name: 'Louise Fellay / Franco Gerville',             cote: 20 },
+      { name: 'Clare Marshall / Bret Marshall',              cote: 18 },
+      { name: 'Olivier Coulombe / Michele Francesco',        cote: 16 },
+      { name: 'Leity Thiongane / Mahé Di Marco',             cote: 14 },
+      { name: 'Corinne R-Collins / Charly Collins',          cote: 14 },
+      { name: 'Maël Gabin / Arnaud Gabin',                   cote: 12 },
+      { name: 'Delphine De Selliers / Nadia Thiongane',      cote: 12 },
+      { name: 'Estelle Rosser / Julien Rosser',              cote: 10 },
+      { name: 'Famille Ducrey',                              cote: 10 },
+      { name: 'Irène Caillet-Bois / Marloes Achermann',      cote: 10 },
+      { name: 'Rachel Suaire / Ruth Martenet',               cote:  8 },
+      { name: 'Sidney Leparmentier / Christiane Renevier',   cote:  8 },
+      { name: 'Hélène Liberati / Eric Derivaz',              cote:  8 },
+      { name: 'Laure Galan / Magali Di Marco',               cote:  6 },
+      { name: 'Frank Peillex / Julina Peillex',              cote:  6 },
+      { name: 'Famille Berra',                               cote:  6 },
+      { name: 'Cynthia Berra / Charly Berra',                cote:  6 },
+      { name: 'Famille Locher',                              cote:  6 },
+      { name: 'Stéphanie Monay / Pierre Raboud',             cote:  6 },
+      { name: 'Johann Cretton / Virginie Gabin',             cote:  6 },
+      { name: 'Raphaël Avitabile / Alexia Avitabile',        cote:  4 },
+      { name: 'Julie Dubos / Cynthia Granger (Aurélie)',     cote:  2 },
+      { name: 'Alexis Ulmann / Raphaël Grillet',             cote:  2 },
+    ];
+
+    /* ============================================================
+       DONNÉES — JOUEURS JUNIORS (Tournoi Défi Junior 2026)
+       green = joueur en catégorie verte (balles vertes au minimum)
+    ============================================================ */
+    const JUNIORS = [
+      { name: 'Charly Granger',          green: false },
+      { name: 'Léonard Farquet',         green: false },
+      { name: 'Lénaël Locher',           green: false },
+      { name: 'Donais Locher',           green: false },
+      { name: 'Alexis Ulmann',           green: false },
+      { name: 'Gabriel Da Silva',        green: false },
+      { name: 'Nathan Fornage',          green: false },
+      { name: 'Bastien Berra',           green: false },
+      { name: 'Mahé Di Marco',           green: false },
+      { name: 'Alexia Avitabile',        green: true  },
+      { name: 'Julina Peillex',          green: true  },
+      { name: 'Raphaël Grillet-Aubert',  green: false },
+      { name: 'Axel Donnet-Monay',       green: true  },
+      { name: 'Ethan Mayor',             green: true  },
+      { name: 'Clara Farquet',           green: true  },
+      { name: 'Noa Borrat-Besson',       green: true  },
+      { name: 'Cécil Wildhaber',         green: true  },
+    ];
+
+    /* ============================================================
+       NAVIGATION ONGLETS
+    ============================================================ */
+    function switchTab(tab) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+      document.getElementById('tab-' + tab).classList.add('active');
+      document.getElementById('screen-' + tab).classList.add('active');
+    }
+
+    /* ============================================================
+       LISTE DES ÉQUIPES — propre, blanc & orange
+    ============================================================ */
+    (function renderTeams() {
+      // Sous-titre dynamique
+      document.getElementById('teamsSub').textContent =
+        `${TEAMS.length} équipes · Cotes fixes de départ · Tournoi 2026`;
+
+      // Liste
+      const body = document.getElementById('teamsBody');
+      let html = '';
+      TEAMS.forEach((t, i) => {
+        html += `
+          <div class="team-row">
+            <div class="col-rank">${i + 1}</div>
+            <div class="col-name">${t.name}</div>
+            <div class="col-cote">${t.cote}</div>
+          </div>`;
+      });
+      body.innerHTML = html;
+    })();
+
+    /* ============================================================
+       CALCUL DES POINTS — Règles 2026 (Nadia)
+       ─────────────────────────────────────────
+       GAGNANT  : +cote de l'adversaire
+       PERDANT  : bonus participation selon cote adverse
+                  · adv. cote inférieure  → +1
+                  · adv. cote égale       → +2
+                  · adv. cote supérieure  → +3
+                + si défaite en 3 sets : +1 pt fixe
+    ============================================================ */
+    function calculate() {
+      const coteA = parseFloat(document.getElementById('coteA').value);
+      const coteB = parseFloat(document.getElementById('coteB').value);
+      const winnerEl = document.querySelector('input[name="winner"]:checked');
+      const setsEl   = document.querySelector('input[name="sets"]:checked');
+
+      // Validation
+      const inputA = document.getElementById('coteA');
+      const inputB = document.getElementById('coteB');
+      inputA.classList.remove('error');
+      inputB.classList.remove('error');
+
+      let valid = true;
+      if (!coteA || coteA <= 0) { inputA.classList.add('error'); inputA.focus(); valid = false; }
+      if (!coteB || coteB <= 0) { inputB.classList.add('error'); if (valid) inputB.focus(); valid = false; }
+      if (!valid) return;
+      if (!winnerEl) {
+        alert('Veuillez sélectionner le vainqueur.');
+        return;
+      }
+
+      const winner   = winnerEl.value;           // 'A' ou 'B'
+      const threeSet = setsEl?.value === 'yes';
+
+      // Cotes selon vainqueur/perdant
+      const coteW = winner === 'A' ? coteA : coteB;   // cote du gagnant
+      const coteL = winner === 'A' ? coteB : coteA;   // cote du perdant
+
+      // ----- GAGNANT -----
+      const gainW = coteL;                            // prend la cote de l'adversaire
+
+      // ----- PERDANT -----
+      // Bonus participation : selon la cote du gagnant comparée à celle du perdant
+      // (du point de vue du perdant : "qui ai-je affronté ?")
+      let participation;
+      let comparaison; // texte pour le bandeau
+      if      (coteW >  coteL) { participation = 3; comparaison = 'adversaire plus fort';   }
+      else if (coteW === coteL) { participation = 2; comparaison = 'cotes égales';           }
+      else                      { participation = 1; comparaison = 'adversaire plus faible'; }
+
+      // Bonus 3 sets : +1 pt fixe
+      const bonus3sets = threeSet ? 1 : 0;
+
+      const gainL = participation + bonus3sets;
+
+      // Deltas finaux par équipe
+      const deltaA = (winner === 'A') ? gainW : gainL;
+      const deltaB = (winner === 'B') ? gainW : gainL;
+
+      // ---- Affichage résultats ----
+      const subWinner = `cote adverse (${coteL} pt${coteL > 1 ? 's' : ''})`;
+      const subLoser  = threeSet
+        ? `participation +${participation} · 3 sets +${bonus3sets}`
+        : `participation +${participation}`;
+
+      document.getElementById('resultGrid').innerHTML =
+        teamResult('A', deltaA, winner === 'A', winner === 'A' ? subWinner : subLoser) +
+        teamResult('B', deltaB, winner === 'B', winner === 'B' ? subWinner : subLoser);
+
+      // ---- Bandeaux explicatifs ----
+      let html = '';
+      const loserTeam = winner === 'A' ? 'B' : 'A';
+
+      html += `<div class="banner banner-yellow">
+        <span class="banner-icon">🎾</span>
+        <div><strong>Équipe ${loserTeam} (perdante) : +${participation}&nbsp;pt${participation > 1 ? 's' : ''} de participation</strong>
+        <br><span style="opacity:.75">${comparaison}</span></div>
+      </div>`;
+
+      if (threeSet) {
+        html += `<div class="banner banner-blue">
+          <span class="banner-icon">🥈</span>
+          <div><strong>Match en 3&nbsp;sets :</strong> +${bonus3sets}&nbsp;pt${bonus3sets > 1 ? 's' : ''} bonus pour l'équipe ${loserTeam}</div>
+        </div>`;
+      }
+      document.getElementById('banners').innerHTML = html;
+
+      // Afficher la carte résultat
+      const res = document.getElementById('results');
+      res.style.display = 'block';
+      setTimeout(() => res.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
+    }
+
+    function teamResult(team, delta, isWinner, sub) {
+      const cls   = isWinner ? 'win' : 'lose';
+      const emoji = isWinner ? '🏆' : '🥈';
+      const label = isWinner ? 'Vainqueur' : 'Perdant';
+      const bCls  = team === 'A' ? 'badge-a' : 'badge-b';
+      return `
+        <div class="result-team ${cls}">
+          <div class="result-team-name">
+            <span class="team-badge ${bCls}" style="width:15px;height:15px;font-size:0.6rem;">${team}</span>
+            Équipe ${team}
+          </div>
+          <div class="result-pts">+${delta}</div>
+          <div class="result-pts-label">${emoji} ${label}</div>
+          <div class="result-pts-sub">${sub}</div>
+        </div>`;
+    }
+
+    /* ============================================================
+       ╔══════════════════════════════════════════════════════════╗
+       ║   PARTIE TOURNOI — Firebase + écrans live                ║
+       ╚══════════════════════════════════════════════════════════╝
+    ============================================================ */
+
+    // ─────── CONFIG FIREBASE — À REMPLACER PAR TES VRAIES VALEURS ───────
+    // 1. Créer un projet sur https://console.firebase.google.com/
+    // 2. Ajouter une "Web app" → copier ici la config
+    // 3. Activer Firestore en mode "test" (ou règles publiques en lecture)
+    const firebaseConfig = {
+      apiKey:            "AIzaSyAD3sGWdbDzhsOD6oOLoR7OF9EFWAc9MkE",
+      authDomain:        "defi-double-morgins.firebaseapp.com",
+      projectId:         "defi-double-morgins",
+      storageBucket:     "defi-double-morgins.firebasestorage.app",
+      messagingSenderId: "404273525812",
+      appId:             "1:404273525812:web:b26add3a1dd8f12f498661"
+    };
+    // Le code admin n'est PAS stocké dans le source.
+    // Son hash SHA-256 est stocké dans Firestore (doc config/admin).
+    // À la première utilisation, l'utilisateur le définit via l'app.
+
+    // ─────── INIT ───────
+    let db = null;
+    let firebaseReady = false;
+    try {
+      firebase.initializeApp(firebaseConfig);
+      db = firebase.firestore();
+      firebaseReady = !firebaseConfig.apiKey.startsWith('REMPLACE');
+    } catch (e) {
+      console.warn('Firebase non initialisé :', e.message);
+    }
+
+    // ─────── ÉTAT GLOBAL ───────
+    const state = {
+      mode:          'adult',     // 'adult' | 'junior' — toggle en haut
+
+      // Adulte
+      teamsLive:     [],
+      matchesLive:   [],
+      teamsSort:     'points',
+      profile:       null,
+      result: {
+        teamA: null, pinAok: false,
+        teamB: null, pinBok: false,
+        winner: null, has3sets: false
+      },
+
+      // Junior
+      juniorsLive:        [],          // [{id, name, green, stars, pinHash, pinEnc}]
+      juniorsMatchesLive: [],          // [{id, joueurA, joueurB, vainqueur, score, starsA, starsB, greenBalls, date}]
+      jSort:              'stars',     // 'stars' | 'alpha'
+      jProfile:           null,
+      jResult: {
+        joueurA: null, pinAok: false,
+        joueurB: null, pinBok: false,
+        winner: null
+      },
+
+      adminUnlocked: false,
+      adminCode:     null
+    };
+
+    // ─────── HELPERS ───────
+    const $ = id => document.getElementById(id);
+    const escapeHtml = s => String(s).replace(/[&<>"']/g, c =>
+      ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+    const fmtDate = ts => {
+      if (!ts) return '';
+      const d = ts.toDate ? ts.toDate() : new Date(ts);
+      return d.toLocaleDateString('fr-CH', { day:'2-digit', month:'2-digit', year:'numeric' });
+    };
+    const randomPin = () => String(Math.floor(1000 + Math.random()*9000));
+    const teamByName = n => state.teamsLive.find(t => t.name === n) || TEAMS.find(t => t.name === n);
+
+    // ─────── LISTENERS FIRESTORE ───────
+    function subscribeFirestore() {
+      if (!firebaseReady) return;
+      db.collection('teams').onSnapshot(snap => {
+        state.teamsLive = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        renderTeamsLive();
+        populateSelects();
+        renderMatchesFilter();
+        if (state.profile) renderProfile(state.profile);
+        if (state.adminUnlocked) renderAdminPins();
+      }, err => console.error('teams snapshot:', err));
+
+      db.collection('matches').orderBy('date', 'desc').onSnapshot(snap => {
+        state.matchesLive = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        renderTeamsLive();
+        renderMatchesList();
+        if (state.profile) renderProfile(state.profile);
+        if (state.adminUnlocked) renderAdminMatches();
+      }, err => console.error('matches snapshot:', err));
+
+      // ─── Juniors ───
+      db.collection('juniors').onSnapshot(snap => {
+        state.juniorsLive = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        renderJuniorsList();
+        populateJSelects();
+        renderJMatchesFilter();
+        if (state.jProfile) renderJProfile(state.jProfile);
+        if (state.adminUnlocked) renderAdminJPins();
+      }, err => console.error('juniors snapshot:', err));
+
+      db.collection('juniors_matches').orderBy('date', 'desc').onSnapshot(snap => {
+        state.juniorsMatchesLive = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        renderJuniorsList();
+        renderJuniorMatchesList();
+        if (state.jProfile) renderJProfile(state.jProfile);
+        if (state.adminUnlocked) renderAdminJMatches();
+      }, err => console.error('juniors_matches snapshot:', err));
+    }
+
+    // ─────── MODE TOGGLE (Adulte / Junior) ───────
+    function switchMode(mode) {
+      state.mode = mode;
+      document.body.setAttribute('data-mode', mode);
+      document.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+      // Aller sur le bon onglet "par défaut" de chaque mode
+      if (mode === 'junior') switchTab('jplayers');
+      else                   switchTab('teams');
+      try { localStorage.setItem('tcm-mode', mode); } catch (e) {}
+    }
+
+    // ─────── ÉCRAN ÉQUIPES (LIVE) ───────
+    function setTeamsSort(mode) {
+      state.teamsSort = mode;
+      document.querySelectorAll('.sort-btn').forEach(b =>
+        b.classList.toggle('active', b.dataset.sort === mode));
+      renderTeamsLive();
+    }
+
+    function renderTeamsLive() {
+      const list   = $('teamsList');
+      const body   = $('teamsBody');
+      const header = list.querySelector('.teams-list-header');
+      if (!body) return;
+
+      const hasLive = state.teamsLive.length > 0;
+      list.classList.toggle('with-points', hasLive);
+
+      // En-tête avec colonne Points si données live
+      header.innerHTML = hasLive
+        ? `<div class="col-rank">N°</div>
+           <div class="col-name">Équipe</div>
+           <div class="col-cote">Cote</div>
+           <div class="col-points">Points</div>`
+        : `<div class="col-rank">N°</div>
+           <div class="col-name">Équipe</div>
+           <div class="col-cote">Cote</div>`;
+
+      // Source : live si dispo sinon TEAMS statique
+      const data = hasLive
+        ? state.teamsLive.map(t => ({ name: t.name, cote: t.cote, points: t.points || 0 }))
+        : TEAMS.map(t => ({ name: t.name, cote: t.cote, points: 0 }));
+
+      // Tri
+      const sorted = [...data].sort((a, b) => {
+        if (state.teamsSort === 'cote')  return b.cote - a.cote;
+        if (state.teamsSort === 'alpha') return a.name.localeCompare(b.name, 'fr');
+        // points (défaut)
+        if (b.points !== a.points) return b.points - a.points;
+        return b.cote - a.cote;
+      });
+
+      // Mise à jour du sous-titre
+      $('teamsSub').textContent = hasLive
+        ? `${data.length} équipes · Tournoi 2026`
+        : `${data.length} équipes · Cotes fixes de départ · Tournoi 2026`;
+
+      // Render lignes — toujours cliquables (profil s'ouvre même en démo)
+      body.innerHTML = sorted.map((t, i) => {
+        const safeName = escapeHtml(t.name);
+        const onclickAttr = `onclick="openProfile(&quot;${t.name.replace(/"/g, '&quot;')}&quot;)"`;
+        return hasLive
+          ? `<div class="team-row" ${onclickAttr}>
+               <div class="col-rank">${i + 1}</div>
+               <div class="col-name">${safeName}</div>
+               <div class="col-cote">${t.cote}</div>
+               <div class="col-points">${t.points}</div>
+             </div>`
+          : `<div class="team-row clickable" ${onclickAttr}>
+               <div class="col-rank">${i + 1}</div>
+               <div class="col-name">${safeName}</div>
+               <div class="col-cote">${t.cote}</div>
+             </div>`;
+      }).join('');
+    }
+
+    // ─────── PROFIL ÉQUIPE ───────
+    function openProfile(name) {
+      state.profile = name;
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+      $('screen-profile').classList.add('active');
+      renderProfile(name);
+    }
+
+    function renderProfile(name) {
+      const t = teamByName(name);
+      if (!t) { $('profileBody').innerHTML = '<div class="empty-state">Équipe introuvable.</div>'; return; }
+
+      // Rang général
+      const ranked = [...state.teamsLive].sort((a, b) => (b.points||0)-(a.points||0) || b.cote-a.cote);
+      const rankIdx = ranked.findIndex(x => x.name === name);
+      const rankTxt = rankIdx >= 0 ? `${rankIdx + 1}ᵉ / ${ranked.length} équipes` : '—';
+
+      // Stats à partir des matchs
+      const myMatches = state.matchesLive.filter(m => m.equipeA === name || m.equipeB === name);
+      const wins   = myMatches.filter(m => (m.equipeA === name && m.vainqueur === 'A') || (m.equipeB === name && m.vainqueur === 'B'));
+      const losses = myMatches.filter(m => !((m.equipeA === name && m.vainqueur === 'A') || (m.equipeB === name && m.vainqueur === 'B')));
+      const winRate = myMatches.length ? Math.round(wins.length / myMatches.length * 100) : 0;
+
+      // Série en cours (matchs triés du + récent au + ancien)
+      let streak = 0, streakType = '';
+      for (const m of myMatches) {
+        const won = (m.equipeA === name && m.vainqueur === 'A') || (m.equipeB === name && m.vainqueur === 'B');
+        if (streak === 0) { streak = 1; streakType = won ? 'V' : 'D'; }
+        else if ((won && streakType === 'V') || (!won && streakType === 'D')) streak++;
+        else break;
+      }
+      const streakTxt = streak === 0 ? '—'
+        : `${streak} ${streakType === 'V' ? 'victoire' : 'défaite'}${streak > 1 ? 's' : ''} consécutive${streak > 1 ? 's' : ''}`;
+
+      // Moyenne pts par match
+      const avgPts = myMatches.length
+        ? Math.round((t.points || 0) / myMatches.length * 10) / 10
+        : 0;
+
+      // Meilleure victoire
+      const bestWin = wins.reduce((best, m) => {
+        const pts = m.equipeA === name ? m.pointsA : m.pointsB;
+        return (!best || pts > best.pts) ? { match: m, pts } : best;
+      }, null);
+      const bestWinTxt = bestWin
+        ? `+${bestWin.pts} pts vs ${escapeHtml(bestWin.match.equipeA === name ? bestWin.match.equipeB : bestWin.match.equipeA)}`
+        : '—';
+
+      // Matchs en 3 sets
+      const threeSetMatches = myMatches.filter(m => m.scores && m.scores.set3);
+      const threeSetCount = threeSetMatches.length;
+
+      // Match le plus serré (3 sets, écart minimum sur set 3)
+      const closest = threeSetMatches.reduce((best, m) => {
+        const [a, b] = (m.scores.set3 || '').split('-').map(Number);
+        if (isNaN(a) || isNaN(b)) return best;
+        const diff = Math.abs(a - b);
+        return (!best || diff < best.diff) ? { match: m, diff } : best;
+      }, null);
+      const closestTxt = closest
+        ? `Set 3 ${closest.match.scores.set3} vs ${escapeHtml(closest.match.equipeA === name ? closest.match.equipeB : closest.match.equipeA)}`
+        : '—';
+
+      // V/D bar
+      const total = wins.length + losses.length;
+      const winPct = total ? (wins.length / total) * 100 : 0;
+      const lossPct = 100 - winPct;
+
+      $('profileBody').innerHTML = `
+        <div class="profile-header">
+          <div class="profile-name">${escapeHtml(t.name)}</div>
+          <div class="profile-rank">${rankTxt}</div>
+          <div class="profile-score">${t.points || 0}</div>
+          <div class="profile-score-label">Points</div>
+          <div class="profile-cote">Cote de départ : ${t.cote}</div>
+        </div>
+
+        ${total > 0 ? `
+        <div class="vd-bar-wrap">
+          <div class="vd-bar-label">
+            <span>${wins.length} victoire${wins.length > 1 ? 's' : ''}</span>
+            <span>${losses.length} défaite${losses.length > 1 ? 's' : ''}</span>
+          </div>
+          <div class="vd-bar">
+            <div class="vd-bar-win"  style="width: ${winPct}%"></div>
+            <div class="vd-bar-loss" style="width: ${lossPct}%"></div>
+          </div>
+        </div>` : ''}
+
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">Matchs joués</div>
+            <div class="stat-value">${myMatches.length}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Victoires</div>
+            <div class="stat-value">${wins.length}V — ${losses.length}D</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Taux de victoire</div>
+            <div class="stat-value">${winRate}%</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Moyenne / match</div>
+            <div class="stat-value">${avgPts} pts</div>
+          </div>
+          <div class="stat-card wide">
+            <div class="stat-label">Série en cours</div>
+            <div class="stat-value">${streakTxt}</div>
+          </div>
+          <div class="stat-card wide">
+            <div class="stat-label">Meilleure victoire</div>
+            <div class="stat-value">${bestWinTxt}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Matchs en 3 sets</div>
+            <div class="stat-value">${threeSetCount}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Match le plus serré</div>
+            <div class="stat-value" style="font-size:0.82rem">${closestTxt}</div>
+          </div>
+        </div>
+
+        <div class="screen-header" style="margin-top:1.2rem;">
+          <div class="screen-title" style="font-size:1rem;">Historique</div>
+        </div>
+        ${myMatches.length === 0
+          ? '<div class="empty-state">Aucun match joué pour le moment.</div>'
+          : myMatches.map(m => renderMatchCard(m, name)).join('')}
+      `;
+    }
+
+    function renderMatchCard(m, viewpoint) {
+      const isViewerA = m.equipeA === viewpoint;
+      const won = (isViewerA && m.vainqueur === 'A') || (!isViewerA && m.vainqueur === 'B');
+      const sets = [];
+      if (m.scores?.set1) sets.push(`<span class="set">${escapeHtml(m.scores.set1)}</span>`);
+      if (m.scores?.set2) sets.push(`<span class="set">${escapeHtml(m.scores.set2)}</span>`);
+      if (m.scores?.set3) sets.push(`<span class="set">${escapeHtml(m.scores.set3)}</span>`);
+
+      const winA = m.vainqueur === 'A';
+      const trophy = '<span class="match-trophy" title="Vainqueur">🏆</span>';
+      return `
+        <div class="match-card">
+          <div class="match-head">
+            <div class="match-date">${fmtDate(m.date)}</div>
+            ${viewpoint ? `<div class="match-result-badge ${won ? 'win' : 'loss'}">${won ? '🏆 Victoire' : '🥈 Défaite'}</div>` : ''}
+          </div>
+          <div class="match-teams">
+            <div class="match-team ${winA ? 'winner' : 'lost'}">
+              ${winA ? trophy + ' ' : ''}${escapeHtml(m.equipeA)}
+              <span class="team-pts">+${m.pointsA}</span>
+            </div>
+            <div class="match-team match-team-b ${winA ? 'lost' : 'winner'}">
+              <span class="team-pts">+${m.pointsB}</span>
+              ${escapeHtml(m.equipeB)}${!winA ? ' ' + trophy : ''}
+            </div>
+          </div>
+          <div class="match-scores">${sets.join('')}</div>
+        </div>`;
+    }
+
+    // ─────── SAISIE D'UN RÉSULTAT ───────
+    // Source d'équipes : live Firestore si dispo, sinon liste statique TEAMS
+    function getTeamsSource() {
+      return state.teamsLive.length > 0 ? state.teamsLive : TEAMS;
+    }
+
+    function populateSelects() {
+      const opts = getTeamsSource()
+        .slice()
+        .sort((a,b) => a.name.localeCompare(b.name, 'fr'))
+        .map(t => `<option value="${escapeHtml(t.name)}">${escapeHtml(t.name)} (cote ${t.cote})</option>`)
+        .join('');
+      const blank = '<option value="">— Choisir une équipe —</option>';
+      ['selectA','selectB'].forEach(id => {
+        const sel = $(id);
+        if (!sel) return;
+        const cur = sel.value;
+        sel.innerHTML = blank + opts;
+        sel.value = cur;
+      });
+    }
+
+    function resetResultForm() {
+      state.result = { teamA:null, pinAok:false, teamB:null, pinBok:false, winner:null, has3sets:false };
+      ['selectA','selectB','pinA','pinB','score1','score2','score3']
+        .forEach(id => { const el = $(id); if (el) el.value = ''; });
+      $('pinStatusA').innerHTML = ''; $('pinStatusA').className = 'pin-status';
+      $('pinStatusB').innerHTML = ''; $('pinStatusB').className = 'pin-status';
+      $('pinErrorA').textContent = '';
+      $('pinErrorB').textContent = '';
+      $('step-2').classList.add('hidden');
+      $('step-3').classList.add('hidden');
+      $('score3Wrap').classList.add('hidden');
+      $('addSet3Btn').classList.remove('active');
+      $('resultPreview').innerHTML = '';
+      $('saveStatus').className = 'save-status';
+      $('saveStatus').textContent = '';
+      document.querySelectorAll('input[name="winnerR"]').forEach(r => r.checked = false);
+      updateStepIndicator();
+    }
+
+    function updateStepIndicator() {
+      const step1Done = state.result.pinAok;
+      const step2Done = state.result.pinBok;
+      $('dot-1').classList.toggle('done',   step1Done);
+      $('dot-2').classList.toggle('active', step1Done && !step2Done);
+      $('dot-2').classList.toggle('done',   step2Done);
+      $('dot-3').classList.toggle('active', step2Done);
+      $('line-1').classList.toggle('done',  step1Done);
+      $('line-2').classList.toggle('done',  step2Done);
+    }
+
+    function onSelectA() {
+      state.result.teamA = $('selectA').value || null;
+      state.result.pinAok = false;
+      $('pinA').value = '';
+      $('pinStatusA').innerHTML = ''; $('pinStatusA').className = 'pin-status';
+      $('pinErrorA').textContent = '';
+      $('step-2').classList.add('hidden');
+      $('step-3').classList.add('hidden');
+      // Exclure A du select B
+      const optsB = getTeamsSource()
+        .filter(t => t.name !== state.result.teamA)
+        .sort((a,b) => a.name.localeCompare(b.name, 'fr'))
+        .map(t => `<option value="${escapeHtml(t.name)}">${escapeHtml(t.name)} (cote ${t.cote})</option>`)
+        .join('');
+      $('selectB').innerHTML = '<option value="">— Choisir une équipe —</option>' + optsB;
+      state.result.teamB = null;
+      state.result.pinBok = false;
+      updateStepIndicator();
+    }
+
+    async function onPinAInput() {
+      const pin = $('pinA').value;
+      $('pinErrorA').textContent = '';
+      $('pinStatusA').className = 'pin-status';
+      $('pinStatusA').innerHTML = '';
+      if (pin.length !== 4) { state.result.pinAok = false; $('step-2').classList.add('hidden'); updateStepIndicator(); return; }
+      if (!state.result.teamA) { $('pinErrorA').textContent = "Sélectionne d'abord l'équipe."; return; }
+      $('pinStatusA').className = 'pin-status loading';
+      $('pinStatusA').innerHTML = '…';
+      const ok = await verifyPin(state.result.teamA, pin);
+      if (ok) {
+        state.result.pinAok = true;
+        $('pinStatusA').className = 'pin-status ok';
+        $('pinStatusA').innerHTML = '✓';
+        $('step-2').classList.remove('hidden');
+      } else {
+        state.result.pinAok = false;
+        $('pinStatusA').className = 'pin-status error';
+        $('pinStatusA').innerHTML = '✕';
+        $('pinErrorA').textContent = 'Code PIN incorrect.';
+        $('step-2').classList.add('hidden');
+      }
+      updateStepIndicator();
+    }
+
+    function onSelectB() {
+      state.result.teamB = $('selectB').value || null;
+      state.result.pinBok = false;
+      $('pinB').value = '';
+      $('pinStatusB').innerHTML = ''; $('pinStatusB').className = 'pin-status';
+      $('pinErrorB').textContent = '';
+      $('step-3').classList.add('hidden');
+      // Mettre à jour labels équipes dans step 3
+      $('winnerLabelA').textContent = state.result.teamA || 'Équipe A';
+      $('winnerLabelB').textContent = state.result.teamB || 'Équipe B';
+      updateStepIndicator();
+    }
+
+    async function onPinBInput() {
+      const pin = $('pinB').value;
+      $('pinErrorB').textContent = '';
+      $('pinStatusB').className = 'pin-status';
+      $('pinStatusB').innerHTML = '';
+      if (pin.length !== 4) { state.result.pinBok = false; $('step-3').classList.add('hidden'); updateStepIndicator(); return; }
+      if (!state.result.teamB) { $('pinErrorB').textContent = "Sélectionne d'abord l'équipe."; return; }
+      $('pinStatusB').className = 'pin-status loading';
+      $('pinStatusB').innerHTML = '…';
+      const ok = await verifyPin(state.result.teamB, pin);
+      if (ok) {
+        state.result.pinBok = true;
+        $('pinStatusB').className = 'pin-status ok';
+        $('pinStatusB').innerHTML = '✓';
+        $('step-3').classList.remove('hidden');
+        $('winnerLabelA').textContent = state.result.teamA;
+        $('winnerLabelB').textContent = state.result.teamB;
+      } else {
+        state.result.pinBok = false;
+        $('pinStatusB').className = 'pin-status error';
+        $('pinStatusB').innerHTML = '✕';
+        $('pinErrorB').textContent = 'Code PIN incorrect.';
+        $('step-3').classList.add('hidden');
+      }
+      updateStepIndicator();
+    }
+
+    async function verifyPin(teamName, pin) {
+      if (!firebaseReady) {
+        // Mode démo sans Firebase
+        return pin === '0000';
+      }
+      try {
+        const q = await db.collection('teams').where('name', '==', teamName).limit(1).get();
+        if (q.empty) return false;
+        const data = q.docs[0].data();
+        // Nouveau format : hash en Firestore, on hashe l'input pour comparer
+        if (data.pinHash) {
+          const inputHash = await sha256Hex(String(pin));
+          return inputHash === data.pinHash;
+        }
+        // Compatibilité ascendante (anciens enregistrements en clair)
+        return String(data.pin) === String(pin);
+      } catch (e) {
+        console.error('verifyPin:', e);
+        return false;
+      }
+    }
+
+    function toggleSet3() {
+      const wrap = $('score3Wrap');
+      const open = wrap.classList.contains('hidden');
+      wrap.classList.toggle('hidden', !open);
+      $('addSet3Btn').classList.toggle('active', open);
+      if (!open) { $('score3').value = ''; }
+      renderResultPreview();
+    }
+
+    function renderResultPreview() {
+      const winnerR = document.querySelector('input[name="winnerR"]:checked');
+      const tA = state.teamsLive.find(t => t.name === state.result.teamA);
+      const tB = state.teamsLive.find(t => t.name === state.result.teamB);
+      if (!winnerR || !tA || !tB) { $('resultPreview').innerHTML = ''; return; }
+
+      const winner   = winnerR.value;
+      const threeSet = !$('score3Wrap').classList.contains('hidden') && $('score3').value.trim() !== '';
+      state.result.winner = winner;
+      state.result.has3sets = threeSet;
+
+      const calc = computePoints(tA.cote, tB.cote, winner, threeSet);
+      const winnerName = winner === 'A' ? tA.name : tB.name;
+
+      $('resultPreview').innerHTML = `
+        <div class="winner-banner">
+          <span class="winner-icon">🏆</span>
+          <div class="winner-text">
+            <div class="winner-label">Vainqueur</div>
+            <div class="winner-name">${escapeHtml(winnerName)}</div>
+          </div>
+        </div>
+        <div class="result-grid">
+          ${teamResult('A', calc.deltaA, winner === 'A', winner === 'A' ? calc.subWinner : calc.subLoser)}
+          ${teamResult('B', calc.deltaB, winner === 'B', winner === 'B' ? calc.subWinner : calc.subLoser)}
+        </div>
+      `;
+    }
+
+    // Réutilise la même logique que calculate() — sortie en deltas + sous-titres
+    function computePoints(coteA, coteB, winner, threeSet) {
+      const coteW = winner === 'A' ? coteA : coteB;
+      const coteL = winner === 'A' ? coteB : coteA;
+      const gainW = coteL;
+      let participation, comparaison;
+      if      (coteW >  coteL)  { participation = 3; comparaison = 'adversaire plus fort';   }
+      else if (coteW === coteL) { participation = 2; comparaison = 'cotes égales';           }
+      else                      { participation = 1; comparaison = 'adversaire plus faible'; }
+      const bonus3sets = threeSet ? 1 : 0;
+      const gainL = participation + bonus3sets;
+      const deltaA = winner === 'A' ? gainW : gainL;
+      const deltaB = winner === 'B' ? gainW : gainL;
+      const subWinner = `cote adverse (${coteL} pt${coteL > 1 ? 's' : ''})`;
+      const subLoser  = threeSet
+        ? `participation +${participation} · 3 sets +${bonus3sets}`
+        : `participation +${participation}`;
+      return { deltaA, deltaB, gainW, gainL, participation, bonus3sets, comparaison, subWinner, subLoser };
+    }
+
+    async function confirmAndSave() {
+      const status = $('saveStatus');
+      status.className = 'save-status'; status.textContent = '';
+
+      if (!state.result.pinAok || !state.result.pinBok) {
+        status.className = 'save-status error'; status.textContent = 'Les deux PINs doivent être validés.'; return;
+      }
+      const winnerR = document.querySelector('input[name="winnerR"]:checked');
+      if (!winnerR) { status.className = 'save-status error'; status.textContent = 'Sélectionne le vainqueur.'; return; }
+
+      const s1 = $('score1').value.trim();
+      const s2 = $('score2').value.trim();
+      const s3 = $('score3Wrap').classList.contains('hidden') ? '' : $('score3').value.trim();
+      if (!s1 || !s2) { status.className = 'save-status error'; status.textContent = 'Renseigne au moins les deux premiers sets.'; return; }
+      if (!firebaseReady) { status.className = 'save-status error'; status.textContent = 'Firebase non configuré.'; return; }
+
+      $('saveBtn').disabled = true;
+      status.className = 'save-status'; status.textContent = 'Enregistrement…';
+
+      const tA = state.teamsLive.find(t => t.name === state.result.teamA);
+      const tB = state.teamsLive.find(t => t.name === state.result.teamB);
+      const threeSet = !!s3;
+      const calc = computePoints(tA.cote, tB.cote, winnerR.value, threeSet);
+
+      try {
+        // 1) Vérifier à nouveau les PINs côté serveur juste avant écriture
+        const okA = await verifyPin(tA.name, $('pinA').value);
+        const okB = await verifyPin(tB.name, $('pinB').value);
+        if (!okA || !okB) throw new Error('PIN invalide à la sauvegarde');
+
+        // 2) Créer le document match
+        await db.collection('matches').add({
+          equipeA:   tA.name,
+          equipeB:   tB.name,
+          vainqueur: winnerR.value,
+          scores:    { set1: s1, set2: s2, ...(s3 ? { set3: s3 } : {}) },
+          pointsA:   calc.deltaA,
+          pointsB:   calc.deltaB,
+          date:      firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        // 3) Incrémenter les compteurs de points
+        await db.collection('teams').doc(tA.id).update({
+          points: firebase.firestore.FieldValue.increment(calc.deltaA)
+        });
+        await db.collection('teams').doc(tB.id).update({
+          points: firebase.firestore.FieldValue.increment(calc.deltaB)
+        });
+
+        status.className = 'save-status ok';
+        status.innerHTML = `✓ Match enregistré · ${escapeHtml(tA.name)} +${calc.deltaA} · ${escapeHtml(tB.name)} +${calc.deltaB}`;
+        setTimeout(() => { resetResultForm(); }, 2500);
+      } catch (e) {
+        console.error(e);
+        status.className = 'save-status error';
+        status.textContent = 'Erreur : ' + e.message;
+      } finally {
+        $('saveBtn').disabled = false;
+      }
+    }
+
+    // ─────── HISTORIQUE DES MATCHS ───────
+    function renderMatchesFilter() {
+      const sel = $('matchesFilter');
+      if (!sel) return;
+      const cur = sel.value;
+      const opts = getTeamsSource()
+        .slice()
+        .sort((a,b) => a.name.localeCompare(b.name, 'fr'))
+        .map(t => `<option value="${escapeHtml(t.name)}">${escapeHtml(t.name)}</option>`)
+        .join('');
+      sel.innerHTML = '<option value="">Tous les matchs</option>' + opts;
+      sel.value = cur;
+    }
+
+    function renderMatchesList() {
+      const body = $('matchesBody');
+      if (!body) return;
+      const filter = $('matchesFilter').value;
+      const matches = filter
+        ? state.matchesLive.filter(m => m.equipeA === filter || m.equipeB === filter)
+        : state.matchesLive;
+      $('matchesSub').textContent = matches.length
+        ? `${matches.length} match${matches.length > 1 ? 's' : ''} ${filter ? '· ' + filter : '· du plus récent au plus ancien'}`
+        : 'Aucun match';
+      body.innerHTML = matches.length
+        ? matches.map(m => renderMatchCard(m, filter || null)).join('')
+        : '<div class="empty-state">Aucun match enregistré pour le moment.</div>';
+    }
+
+    // ─────── ADMIN — code hashé (SHA-256) + stocké dans Firestore ───────
+
+    // Hash SHA-256 d'une chaîne, retourne l'hex
+    async function sha256Hex(str) {
+      const enc = new TextEncoder().encode(str);
+      const buf = await crypto.subtle.digest('SHA-256', enc);
+      return Array.from(new Uint8Array(buf))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+    }
+
+    // ─── Chiffrement AES-GCM avec clé dérivée du code admin (PBKDF2) ───
+    // Sert à chiffrer les PINs des équipes : seul l'admin (qui connaît son code) peut les déchiffrer.
+    async function deriveKey(code) {
+      const enc = new TextEncoder().encode(code);
+      const base = await crypto.subtle.importKey('raw', enc, { name: 'PBKDF2' }, false, ['deriveKey']);
+      const salt = new TextEncoder().encode('tcm-defi-double-2026'); // salt public, OK
+      return crypto.subtle.deriveKey(
+        { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
+        base,
+        { name: 'AES-GCM', length: 256 },
+        false,
+        ['encrypt', 'decrypt']
+      );
+    }
+
+    async function encryptWithCode(plaintext, code) {
+      const key = await deriveKey(code);
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const ct = await crypto.subtle.encrypt(
+        { name: 'AES-GCM', iv },
+        key,
+        new TextEncoder().encode(plaintext)
+      );
+      const combined = new Uint8Array(iv.length + ct.byteLength);
+      combined.set(iv);
+      combined.set(new Uint8Array(ct), iv.length);
+      return Array.from(combined).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    async function decryptWithCode(hex, code) {
+      const key = await deriveKey(code);
+      const combined = new Uint8Array(hex.match(/.{2}/g).map(h => parseInt(h, 16)));
+      const iv = combined.slice(0, 12);
+      const ct = combined.slice(12);
+      const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
+      return new TextDecoder().decode(pt);
+    }
+
+    async function openAdmin() {
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+      $('screen-admin').classList.add('active');
+      state.adminUnlocked = false;
+      state.adminCode = null;  // sécurité : on oublie le code à chaque accès
+      $('adminPin').value = '';
+      $('newAdminPin').value = '';
+      $('newAdminPin2').value = '';
+      $('adminError').textContent = '';
+      $('setupStatus').textContent = ''; $('setupStatus').className = 'save-status';
+      $('adminLock').classList.remove('hidden');
+      $('adminPanel').classList.add('hidden');
+
+      // Mode démo (pas de Firebase) : code accepté = "demo000"
+      if (!firebaseReady) {
+        $('adminSetup').classList.add('hidden');
+        $('adminLogin').classList.remove('hidden');
+        $('adminLockTitle').textContent = 'Accès administrateur (démo)';
+        return;
+      }
+
+      // Vérifier si le code admin a déjà été défini
+      try {
+        const doc = await db.collection('config').doc('admin').get();
+        if (!doc.exists) {
+          // Première utilisation → setup
+          $('adminSetup').classList.remove('hidden');
+          $('adminLogin').classList.add('hidden');
+          $('adminLockTitle').textContent = 'Initialisation du code admin';
+        } else {
+          // Login normal
+          $('adminSetup').classList.add('hidden');
+          $('adminLogin').classList.remove('hidden');
+          $('adminLockTitle').textContent = 'Accès administrateur';
+        }
+      } catch (e) {
+        console.error('openAdmin:', e);
+        $('adminError').textContent = 'Erreur de connexion à Firestore.';
+      }
+    }
+
+    async function setupAdmin() {
+      const p1 = $('newAdminPin').value.trim();
+      const p2 = $('newAdminPin2').value.trim();
+      const status = $('setupStatus');
+      status.className = 'save-status'; status.textContent = '';
+
+      if (p1.length < 6 || p1.length > 20) {
+        status.className = 'save-status error';
+        status.textContent = 'Le code doit faire entre 6 et 20 caractères.';
+        return;
+      }
+      if (p1 !== p2) {
+        status.className = 'save-status error';
+        status.textContent = 'Les deux codes ne correspondent pas.';
+        return;
+      }
+
+      $('setupBtn').disabled = true;
+      status.textContent = 'Enregistrement…';
+      try {
+        const hash = await sha256Hex(p1);
+        await db.collection('config').doc('admin').set({ pinHash: hash, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+        status.className = 'save-status ok';
+        status.textContent = '✓ Code admin enregistré. Connexion…';
+        // Auto-login avec le code qu'on vient de définir
+        setTimeout(() => unlockAdminPanel(p1), 1500);
+      } catch (e) {
+        console.error(e);
+        status.className = 'save-status error';
+        status.textContent = 'Erreur : ' + e.message;
+      } finally {
+        $('setupBtn').disabled = false;
+      }
+    }
+
+    async function onAdminPinInput() {
+      const v = $('adminPin').value;
+      $('adminError').textContent = '';
+      if (v.length < 6) return;
+
+      // Mode démo
+      if (!firebaseReady) {
+        if (v === 'demo000') unlockAdminPanel();
+        else $('adminError').textContent = 'Mode démo : code = demo000';
+        return;
+      }
+
+      try {
+        const hash = await sha256Hex(v);
+        const doc = await db.collection('config').doc('admin').get();
+        if (!doc.exists) {
+          $('adminError').textContent = 'Aucun code admin défini. Recharge la page.';
+          return;
+        }
+        if (hash === doc.data().pinHash) {
+          unlockAdminPanel(v);
+        } else {
+          $('adminError').textContent = 'Code admin incorrect.';
+        }
+      } catch (e) {
+        console.error(e);
+        $('adminError').textContent = 'Erreur de vérification.';
+      }
+    }
+
+    // code = code admin en clair, gardé en mémoire pour (dé)chiffrer les PINs équipes
+    function unlockAdminPanel(code) {
+      state.adminUnlocked = true;
+      state.adminCode = code || null;
+      $('adminLock').classList.add('hidden');
+      $('adminPanel').classList.remove('hidden');
+      // Adulte
+      renderAdminPins();
+      renderAdminMatches();
+      if (state.teamsLive.length > 0) $('seedCard').classList.add('hidden');
+      // Junior
+      renderAdminJPins();
+      renderAdminJMatches();
+    }
+
+    async function seedTeams() {
+      if (!firebaseReady) { alert('Firebase non configuré.'); return; }
+      if (!state.adminCode) { alert('Reconnecte-toi à l\'admin avant.'); return; }
+      $('seedBtn').disabled = true;
+      const out = $('seedResult');
+      out.innerHTML = '<div class="loading-state">Création des équipes (chiffrement)…</div>';
+      try {
+        const existing = await db.collection('teams').limit(1).get();
+        if (!existing.empty) {
+          out.innerHTML = '<div class="empty-state">Les équipes existent déjà dans Firestore.</div>';
+          $('seedBtn').disabled = false;
+          return;
+        }
+
+        // Génération : PIN aléatoire + hash + version chiffrée (pour affichage admin)
+        const generated = [];
+        for (const t of TEAMS) {
+          const pin = randomPin();
+          const pinHash = await sha256Hex(pin);
+          const pinEnc  = await encryptWithCode(pin, state.adminCode);
+          generated.push({ ...t, pin /* affichage uniquement */, pinHash, pinEnc, points: 0 });
+        }
+
+        // Écriture : on stocke pinHash + pinEnc, JAMAIS la version en clair
+        const batch = db.batch();
+        generated.forEach(t => {
+          const { pin, ...toSave } = t; // on retire la version en clair
+          const ref = db.collection('teams').doc();
+          batch.set(ref, toSave);
+        });
+        await batch.commit();
+
+        // Affichage des PINs en clair (UNE seule fois — à imprimer / distribuer)
+        out.innerHTML = `
+          <div style="font-size:0.85rem;font-weight:500;margin-bottom:0.6rem;color:var(--primary-dark);">
+            ✓ 22 équipes créées (PINs chiffrés dans Firestore). Voici la liste à imprimer / distribuer :
+          </div>
+          <div class="seed-pin-list">
+            ${generated.map(t => `
+              <div class="seed-pin-item">
+                <span>${escapeHtml(t.name)}</span>
+                <span class="pin-val">${t.pin}</span>
+              </div>`).join('')}
+          </div>
+          <button class="ghost-btn" style="margin-top:0.8rem;" onclick="window.print()">🖨️ Imprimer</button>
+        `;
+      } catch (e) {
+        console.error(e);
+        out.innerHTML = '<div class="save-status error">Erreur : ' + escapeHtml(e.message) + '</div>';
+      } finally {
+        $('seedBtn').disabled = false;
+      }
+    }
+
+    async function renderAdminPins() {
+      const wrap = $('adminPinsList');
+      if (!wrap) return;
+      if (state.teamsLive.length === 0) {
+        wrap.innerHTML = '<div class="empty-state">Aucune équipe. Initialise d\'abord le tournoi.</div>';
+        return;
+      }
+      if (!state.adminCode) {
+        wrap.innerHTML = '<div class="empty-state">Reconnecte-toi à l\'admin pour voir les PINs.</div>';
+        return;
+      }
+
+      wrap.innerHTML = '<div class="loading-state">Déchiffrement des PINs…</div>';
+
+      // Déchiffrement de chaque PIN via le code admin en mémoire
+      const decrypted = [];
+      for (const t of state.teamsLive) {
+        let plain = '????';
+        try {
+          if (t.pinEnc)      plain = await decryptWithCode(t.pinEnc, state.adminCode);
+          else if (t.pin)    plain = t.pin; // compat ancien format
+        } catch (e) {
+          plain = '⚠ erreur';
+        }
+        decrypted.push({ ...t, plainPin: plain });
+      }
+
+      wrap.innerHTML = decrypted
+        .sort((a,b) => a.name.localeCompare(b.name, 'fr'))
+        .map(t => `
+          <div class="admin-pin-row">
+            <div>${escapeHtml(t.name)}</div>
+            <input type="text" maxlength="4" pattern="[0-9]{4}" value="${escapeHtml(t.plainPin)}" id="newpin-${t.id}">
+            <div class="admin-pin-actions">
+              <button onclick="updatePin('${t.id}', '${escapeHtml(t.name).replace(/'/g, "\\'")}')">Modifier</button>
+              <button class="admin-del-btn" onclick="deleteTeam('${t.id}', '${escapeHtml(t.name).replace(/'/g, "\\'")}')">Supprimer</button>
+            </div>
+          </div>`).join('');
+    }
+
+    async function deleteTeam(id, name) {
+      if (!firebaseReady) { alert('Firebase non configuré.'); return; }
+      if (!confirm(`Supprimer l'équipe "${name}" ?\n\nLes matchs déjà joués par cette équipe restent dans l'historique (mais sans profil cliquable). À utiliser en cas d'erreur de saisie initiale.`)) return;
+      try {
+        await db.collection('teams').doc(id).delete();
+      } catch (e) { alert('Erreur : ' + e.message); }
+    }
+
+    async function updatePin(id, name) {
+      const newPin = $('newpin-' + id).value.trim();
+      if (!/^\d{4}$/.test(newPin)) { alert('PIN doit être 4 chiffres.'); return; }
+      if (!state.adminCode) { alert('Reconnecte-toi à l\'admin.'); return; }
+      try {
+        const pinHash = await sha256Hex(newPin);
+        const pinEnc  = await encryptWithCode(newPin, state.adminCode);
+        // On supprime l'ancien champ pin en clair s'il existait
+        await db.collection('teams').doc(id).update({
+          pinHash,
+          pinEnc,
+          pin: firebase.firestore.FieldValue.delete()
+        });
+        alert(`PIN de ${name} mis à jour.`);
+      } catch (e) { alert('Erreur : ' + e.message); }
+    }
+
+    function renderAdminMatches() {
+      const wrap = $('adminMatchesList');
+      if (!wrap) return;
+      if (state.matchesLive.length === 0) {
+        wrap.innerHTML = '<div class="empty-state">Aucun match enregistré.</div>';
+        return;
+      }
+      wrap.innerHTML = state.matchesLive.map(m => `
+        <div class="admin-match-row">
+          <div class="admin-match-info">
+            <div class="a-teams">${escapeHtml(m.equipeA)} vs ${escapeHtml(m.equipeB)} · ${m.vainqueur === 'A' ? '🏆 A' : '🏆 B'}</div>
+            <div class="a-date">${fmtDate(m.date)} · ${escapeHtml(m.equipeA)} +${m.pointsA} / ${escapeHtml(m.equipeB)} +${m.pointsB}${m.editedAt ? ' · ✏️ modifié' : ''}</div>
+          </div>
+          <div class="admin-match-actions">
+            <button class="admin-edit-btn" onclick="openEditMatch('${m.id}')">Modifier</button>
+            <button class="admin-del-btn"  onclick="deleteMatch('${m.id}')">Supprimer</button>
+          </div>
+        </div>`).join('');
+    }
+
+    // ─── Modale édition d'un match ───
+    let editingMatchId = null;
+
+    function openEditMatch(id) {
+      const m = state.matchesLive.find(x => x.id === id);
+      if (!m) return;
+      editingMatchId = id;
+
+      const body = $('editMatchBody');
+      body.innerHTML = `
+        <div class="modal-teams-header">
+          <strong>${escapeHtml(m.equipeA)}</strong>
+          <span style="color:var(--text-light);"> vs </span>
+          <strong>${escapeHtml(m.equipeB)}</strong>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1.1rem;">
+          <label class="form-label" style="margin-bottom: 0.45rem;">Vainqueur</label>
+          <div class="radio-group">
+            <label class="radio-label">
+              <input type="radio" name="editWinner" value="A" ${m.vainqueur === 'A' ? 'checked' : ''}>
+              ${escapeHtml(m.equipeA)}
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="editWinner" value="B" ${m.vainqueur === 'B' ? 'checked' : ''}>
+              ${escapeHtml(m.equipeB)}
+            </label>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 0.9rem;">
+          <label class="form-label">Set 1</label>
+          <input type="text" class="form-input score-input" id="editScore1" value="${escapeHtml(m.scores?.set1 || '')}" maxlength="5">
+        </div>
+        <div class="form-group" style="margin-bottom: 0.9rem;">
+          <label class="form-label">Set 2</label>
+          <input type="text" class="form-input score-input" id="editScore2" value="${escapeHtml(m.scores?.set2 || '')}" maxlength="5">
+        </div>
+        <div class="form-group" style="margin-bottom: 0.4rem;">
+          <label class="form-label">Set 3 <span style="color:var(--text-light);font-weight:400;">(super tie-break, laisser vide si match en 2 sets)</span></label>
+          <input type="text" class="form-input score-input" id="editScore3" value="${escapeHtml(m.scores?.set3 || '')}" maxlength="5" placeholder="ex. 10-7">
+        </div>
+
+        <div style="font-size:0.78rem;color:var(--text-light);padding:0.7rem 0.85rem;background:var(--primary-light);border-radius:var(--radius);margin-top:0.8rem;line-height:1.5;">
+          ℹ️ En sauvegardant, les points seront recalculés automatiquement et les compteurs des deux équipes mis à jour.
+        </div>
+
+        <div class="modal-actions">
+          <button class="btn-cancel" onclick="closeEditModal()">Annuler</button>
+          <button class="btn-calc"   onclick="saveEditedMatch()" id="saveEditBtn">Enregistrer</button>
+        </div>
+        <div id="editStatus" class="save-status"></div>
+      `;
+
+      $('editModal').classList.remove('hidden');
+    }
+
+    function closeEditModal() {
+      $('editModal').classList.add('hidden');
+      editingMatchId  = null;
+      editingJMatchId = null;
+    }
+
+    function closeEditModalIfBackdrop(e) {
+      if (e.target === e.currentTarget) closeEditModal();
+    }
+
+    async function saveEditedMatch() {
+      if (!editingMatchId) return;
+      const status = $('editStatus');
+      status.className = 'save-status'; status.textContent = '';
+
+      const newWinner = document.querySelector('input[name="editWinner"]:checked')?.value;
+      const s1 = $('editScore1').value.trim();
+      const s2 = $('editScore2').value.trim();
+      const s3 = $('editScore3').value.trim();
+
+      if (!newWinner) { status.className = 'save-status error'; status.textContent = 'Sélectionne le vainqueur.'; return; }
+      if (!s1 || !s2) { status.className = 'save-status error'; status.textContent = 'Sets 1 et 2 requis.'; return; }
+
+      $('saveEditBtn').disabled = true;
+      status.textContent = 'Enregistrement…';
+
+      try {
+        // Transaction atomique : on lit le match courant et on calcule le différentiel
+        // (évite les erreurs de double-application si l'utilisateur clique plusieurs fois)
+        await db.runTransaction(async (tx) => {
+          const matchRef = db.collection('matches').doc(editingMatchId);
+          const matchSnap = await tx.get(matchRef);
+          if (!matchSnap.exists) throw new Error('Match introuvable');
+          const oldData = matchSnap.data();
+
+          const tA = state.teamsLive.find(t => t.name === oldData.equipeA);
+          const tB = state.teamsLive.find(t => t.name === oldData.equipeB);
+          if (!tA || !tB) throw new Error('Équipes introuvables');
+
+          const threeSet = !!s3;
+          const calc = computePoints(tA.cote, tB.cote, newWinner, threeSet);
+
+          // Différentiel : ce qu'il faut AJOUTER au compteur (peut être positif ou négatif)
+          const diffA = calc.deltaA - (oldData.pointsA || 0);
+          const diffB = calc.deltaB - (oldData.pointsB || 0);
+
+          tx.update(matchRef, {
+            vainqueur: newWinner,
+            scores:    { set1: s1, set2: s2, ...(s3 ? { set3: s3 } : {}) },
+            pointsA:   calc.deltaA,
+            pointsB:   calc.deltaB,
+            editedAt:  firebase.firestore.FieldValue.serverTimestamp()
+          });
+          tx.update(db.collection('teams').doc(tA.id), {
+            points: firebase.firestore.FieldValue.increment(diffA)
+          });
+          tx.update(db.collection('teams').doc(tB.id), {
+            points: firebase.firestore.FieldValue.increment(diffB)
+          });
+        });
+
+        status.className = 'save-status ok';
+        status.textContent = '✓ Match modifié, compteurs ajustés';
+        setTimeout(() => closeEditModal(), 1500);
+      } catch (e) {
+        console.error(e);
+        status.className = 'save-status error';
+        status.textContent = 'Erreur : ' + e.message;
+      } finally {
+        $('saveEditBtn').disabled = false;
+      }
+    }
+
+    // ─── Reset Défi Double (adulte) ───
+    async function resetTournament() {
+      if (!firebaseReady) { alert('Firebase non configuré.'); return; }
+      const ok1 = confirm('⚠️ DÉFI DOUBLE (Adulte)\n\nSupprimer TOUS les matchs adultes et remettre les compteurs de points à 0 ?\n\nLes équipes et leurs PINs sont conservés. Le tournoi junior n\'est PAS touché.');
+      if (!ok1) return;
+      const ok2 = confirm('Cette action est irréversible. Confirmer le reset du Défi Double ?');
+      if (!ok2) return;
+
+      const btn = $('resetBtn');
+      const status = $('resetStatus');
+      btn.disabled = true;
+      status.className = 'save-status';
+      status.textContent = 'Réinitialisation Défi Double en cours…';
+
+      try {
+        const matchesSnap = await db.collection('matches').get();
+        const batch1 = db.batch();
+        matchesSnap.docs.forEach(d => batch1.delete(d.ref));
+        if (matchesSnap.size > 0) await batch1.commit();
+
+        const teamsSnap = await db.collection('teams').get();
+        const batch2 = db.batch();
+        teamsSnap.docs.forEach(d => batch2.update(d.ref, { points: 0 }));
+        if (teamsSnap.size > 0) await batch2.commit();
+
+        status.className = 'save-status ok';
+        status.innerHTML = `✓ Défi Double remis à zéro · ${matchesSnap.size} matchs supprimés · ${teamsSnap.size} équipes à 0 pts`;
+      } catch (e) {
+        console.error(e);
+        status.className = 'save-status error';
+        status.textContent = 'Erreur : ' + e.message;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    // ─── Reset Défi Junior ───
+    async function resetJuniorTournament() {
+      if (!firebaseReady) { alert('Firebase non configuré.'); return; }
+      const ok1 = confirm('⚠️ DÉFI JUNIOR\n\nSupprimer TOUS les matchs juniors et remettre les compteurs d\'étoiles à 0 ?\n\nLes joueurs et leurs PINs sont conservés. Le tournoi adulte n\'est PAS touché.');
+      if (!ok1) return;
+      const ok2 = confirm('Cette action est irréversible. Confirmer le reset du Défi Junior ?');
+      if (!ok2) return;
+
+      const btn = $('resetJBtn');
+      const status = $('resetJStatus');
+      btn.disabled = true;
+      status.className = 'save-status';
+      status.textContent = 'Réinitialisation Défi Junior en cours…';
+
+      try {
+        const matchesSnap = await db.collection('juniors_matches').get();
+        const batch1 = db.batch();
+        matchesSnap.docs.forEach(d => batch1.delete(d.ref));
+        if (matchesSnap.size > 0) await batch1.commit();
+
+        const juniorsSnap = await db.collection('juniors').get();
+        const batch2 = db.batch();
+        juniorsSnap.docs.forEach(d => batch2.update(d.ref, { stars: 0 }));
+        if (juniorsSnap.size > 0) await batch2.commit();
+
+        status.className = 'save-status ok';
+        status.innerHTML = `✓ Défi Junior remis à zéro · ${matchesSnap.size} matchs supprimés · ${juniorsSnap.size} joueurs à 0 ⭐`;
+      } catch (e) {
+        console.error(e);
+        status.className = 'save-status error';
+        status.textContent = 'Erreur : ' + e.message;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function deleteMatch(id) {
+      const m = state.matchesLive.find(x => x.id === id);
+      if (!m) return;
+      if (!confirm(`Supprimer le match ${m.equipeA} vs ${m.equipeB} ?\nLes points seront soustraits des compteurs.`)) return;
+      try {
+        // Transaction atomique pour éviter les soustractions doubles
+        await db.runTransaction(async (tx) => {
+          const matchRef = db.collection('matches').doc(id);
+          const matchSnap = await tx.get(matchRef);
+          if (!matchSnap.exists) return; // déjà supprimé
+          const data = matchSnap.data();
+
+          const tA = state.teamsLive.find(t => t.name === data.equipeA);
+          const tB = state.teamsLive.find(t => t.name === data.equipeB);
+          if (tA) tx.update(db.collection('teams').doc(tA.id), {
+            points: firebase.firestore.FieldValue.increment(-(data.pointsA || 0))
+          });
+          if (tB) tx.update(db.collection('teams').doc(tB.id), {
+            points: firebase.firestore.FieldValue.increment(-(data.pointsB || 0))
+          });
+          tx.delete(matchRef);
+        });
+      } catch (e) { alert('Erreur : ' + e.message); }
+    }
+
+    // ─── Ajouter une nouvelle équipe en cours de tournoi ───
+    async function addNewTeam() {
+      if (!firebaseReady) { alert('Firebase non configuré.'); return; }
+      if (!state.adminCode) { alert('Reconnecte-toi à l\'admin.'); return; }
+
+      const name = $('newTeamName').value.trim();
+      const cote = parseInt($('newTeamCote').value, 10);
+      const status = $('addTeamStatus');
+      const pinOut = $('addTeamPin');
+      status.className = 'save-status'; status.textContent = '';
+      pinOut.innerHTML = '';
+
+      if (!name) { status.className = 'save-status error'; status.textContent = 'Nom requis.'; return; }
+      if (!cote || cote < 1 || cote > 30) {
+        status.className = 'save-status error'; status.textContent = 'Cote invalide (1 à 30).'; return;
+      }
+      // Vérifier qu'elle n'existe pas déjà
+      if (state.teamsLive.some(t => t.name.toLowerCase() === name.toLowerCase())) {
+        status.className = 'save-status error'; status.textContent = 'Cette équipe existe déjà.'; return;
+      }
+
+      $('addTeamBtn').disabled = true;
+      status.textContent = 'Création…';
+
+      try {
+        const pin     = randomPin();
+        const pinHash = await sha256Hex(pin);
+        const pinEnc  = await encryptWithCode(pin, state.adminCode);
+
+        await db.collection('teams').add({
+          name, cote, points: 0, pinHash, pinEnc
+        });
+
+        status.className = 'save-status ok';
+        status.textContent = '✓ Équipe ajoutée';
+        pinOut.innerHTML = `
+          <div class="seed-pin-list" style="margin-top:0.8rem;">
+            <div class="seed-pin-item">
+              <span>${escapeHtml(name)} <span style="color:var(--text-light)">(cote ${cote})</span></span>
+              <span class="pin-val">${pin}</span>
+            </div>
+          </div>
+          <div style="font-size:0.75rem;color:var(--primary-dark);margin-top:0.5rem;">
+            📋 Note ce PIN et donne-le aux joueurs — il restera visible dans la section "Codes PIN".
+          </div>
+        `;
+        $('newTeamName').value = '';
+        $('newTeamCote').value = '';
+      } catch (e) {
+        console.error(e);
+        status.className = 'save-status error';
+        status.textContent = 'Erreur : ' + e.message;
+      } finally {
+        $('addTeamBtn').disabled = false;
+      }
+    }
+
+    // ─── Recalcul des compteurs depuis l'historique (outil de réparation) ───
+    async function recomputeTeamPoints() {
+      if (!firebaseReady) { alert('Firebase non configuré.'); return; }
+      if (!confirm('Recalculer tous les compteurs depuis l\'historique des matchs ?\n\nLes points de chaque équipe seront remis à 0, puis recalculés en additionnant les points de chaque match enregistré. Aucun match ne sera supprimé.')) return;
+
+      const status = $('recomputeStatus');
+      const btn = $('recomputeBtn');
+      btn.disabled = true;
+      status.className = 'save-status';
+      status.textContent = 'Calcul en cours…';
+
+      try {
+        // Calcul des totaux par équipe à partir des matchs
+        const totals = {};
+        state.teamsLive.forEach(t => { totals[t.name] = 0; });
+        state.matchesLive.forEach(m => {
+          if (totals[m.equipeA] !== undefined) totals[m.equipeA] += (m.pointsA || 0);
+          if (totals[m.equipeB] !== undefined) totals[m.equipeB] += (m.pointsB || 0);
+        });
+
+        // Mise à jour batch de toutes les équipes
+        const batch = db.batch();
+        state.teamsLive.forEach(t => {
+          batch.update(db.collection('teams').doc(t.id), { points: totals[t.name] || 0 });
+        });
+        await batch.commit();
+
+        const totalPts = Object.values(totals).reduce((a, b) => a + b, 0);
+        status.className = 'save-status ok';
+        status.textContent = `✓ ${state.teamsLive.length} compteurs recalculés (${state.matchesLive.length} matchs · ${totalPts} pts au total)`;
+      } catch (e) {
+        console.error(e);
+        status.className = 'save-status error';
+        status.textContent = 'Erreur : ' + e.message;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    /* ============================================================
+       ╔═══════════════════════════════════════════════════════╗
+       ║   FONCTIONS JUNIOR — Classement, Profil, Saisie, Admin ║
+       ╚═══════════════════════════════════════════════════════╝
+    ============================================================ */
+
+    function getJuniorsSource() {
+      return state.juniorsLive.length > 0 ? state.juniorsLive : JUNIORS;
+    }
+
+    function setJSort(mode) {
+      state.jSort = mode;
+      document.querySelectorAll('[data-jsort]').forEach(b =>
+        b.classList.toggle('active', b.dataset.jsort === mode));
+      renderJuniorsList();
+    }
+
+    function renderJuniorsList() {
+      const body = $('jplayersBody');
+      if (!body) return;
+
+      const hasLive = state.juniorsLive.length > 0;
+      const data = hasLive
+        ? state.juniorsLive.map(j => ({ name: j.name, green: j.green, stars: j.stars || 0 }))
+        : JUNIORS.map(j => ({ name: j.name, green: j.green, stars: 0 }));
+
+      const sorted = [...data].sort((a, b) => {
+        if (state.jSort === 'alpha') return a.name.localeCompare(b.name, 'fr');
+        if (b.stars !== a.stars) return b.stars - a.stars;
+        return a.name.localeCompare(b.name, 'fr');
+      });
+
+      $('jplayersSub').textContent = `${data.length} joueurs · Tournoi junior 2026`;
+
+      body.innerHTML = sorted.map((j, i) => `
+        <div class="team-row clickable" onclick="openJProfile(&quot;${j.name.replace(/"/g,'&quot;')}&quot;)">
+          <div class="col-rank">${i + 1}</div>
+          <div class="col-name">${escapeHtml(j.name)}${j.green ? '<span class="green-badge" title="Catégorie verte">🟢</span>' : ''}</div>
+          <div class="col-points stars-display">⭐<span class="star-count">${j.stars}</span></div>
+        </div>`).join('');
+
+      // En-tête sur 3 colonnes pour les juniors
+      const list = $('jplayersList');
+      list.classList.add('with-points');
+    }
+
+    // ─── Profil junior ───
+    function openJProfile(name) {
+      state.jProfile = name;
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+      $('screen-jprofile').classList.add('active');
+      renderJProfile(name);
+    }
+
+    function renderJProfile(name) {
+      const j = state.juniorsLive.find(x => x.name === name) || JUNIORS.find(x => x.name === name);
+      if (!j) { $('jprofileBody').innerHTML = '<div class="empty-state">Joueur introuvable.</div>'; return; }
+
+      const ranked = [...state.juniorsLive].sort((a, b) => (b.stars || 0) - (a.stars || 0));
+      const rankIdx = ranked.findIndex(x => x.name === name);
+      const rankTxt = rankIdx >= 0 ? `${rankIdx + 1}ᵉ / ${ranked.length} joueurs` : '—';
+
+      const myMatches = state.juniorsMatchesLive.filter(m => m.joueurA === name || m.joueurB === name);
+      const wins   = myMatches.filter(m => (m.joueurA === name && m.vainqueur === 'A') || (m.joueurB === name && m.vainqueur === 'B'));
+      const losses = myMatches.filter(m => !((m.joueurA === name && m.vainqueur === 'A') || (m.joueurB === name && m.vainqueur === 'B')));
+      const winRate = myMatches.length ? Math.round(wins.length / myMatches.length * 100) : 0;
+
+      const total = wins.length + losses.length;
+      const winPct = total ? (wins.length / total) * 100 : 0;
+
+      $('jprofileBody').innerHTML = `
+        <div class="profile-header">
+          <div class="profile-name">${escapeHtml(j.name)}${j.green ? '<span class="green-badge" style="width:18px;height:18px;font-size:0.7rem;">🟢</span>' : ''}</div>
+          <div class="profile-rank">${rankTxt}</div>
+          <div class="profile-score">⭐${j.stars || 0}</div>
+          <div class="profile-score-label">Étoiles</div>
+          ${j.green ? '<div class="profile-cote" style="background:#DCFCE7;color:#166534;">🟢 Catégorie verte</div>' : ''}
+        </div>
+
+        ${total > 0 ? `
+        <div class="vd-bar-wrap">
+          <div class="vd-bar-label">
+            <span>${wins.length} victoire${wins.length > 1 ? 's' : ''}</span>
+            <span>${losses.length} défaite${losses.length > 1 ? 's' : ''}</span>
+          </div>
+          <div class="vd-bar">
+            <div class="vd-bar-win"  style="width:${winPct}%"></div>
+            <div class="vd-bar-loss" style="width:${100 - winPct}%"></div>
+          </div>
+        </div>` : ''}
+
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">Matchs joués</div>
+            <div class="stat-value">${myMatches.length}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">V / D</div>
+            <div class="stat-value">${wins.length}V — ${losses.length}D</div>
+          </div>
+          <div class="stat-card wide">
+            <div class="stat-label">Taux de victoire</div>
+            <div class="stat-value">${winRate}%</div>
+          </div>
+        </div>
+
+        <div class="screen-header" style="margin-top:1.2rem;">
+          <div class="screen-title" style="font-size:1rem;">Historique</div>
+        </div>
+        ${myMatches.length === 0
+          ? '<div class="empty-state">Aucun match joué.</div>'
+          : myMatches.map(m => renderJMatchCard(m, name)).join('')}
+      `;
+    }
+
+    function renderJMatchCard(m, viewpoint) {
+      const isViewerA = m.joueurA === viewpoint;
+      const won = viewpoint && ((isViewerA && m.vainqueur === 'A') || (!isViewerA && m.vainqueur === 'B'));
+      const winA = m.vainqueur === 'A';
+      const trophy = '<span class="match-trophy">🏆</span>';
+
+      const sets = [];
+      if (m.scores?.set1) sets.push(`<span class="set">${escapeHtml(m.scores.set1)}</span>`);
+      if (m.scores?.set2) sets.push(`<span class="set">${escapeHtml(m.scores.set2)}</span>`);
+      if (m.scores?.set3) sets.push(`<span class="set" title="Tie-break">${escapeHtml(m.scores.set3)}</span>`);
+      // Compat ancien format (un seul score)
+      if (sets.length === 0 && m.score) sets.push(`<span class="set">${escapeHtml(m.score)}</span>`);
+
+      return `
+        <div class="match-card">
+          <div class="match-head">
+            <div class="match-date">${fmtDate(m.date)}${m.greenBalls ? ' · 🟢 balles vertes' : ''}</div>
+            ${viewpoint ? `<div class="match-result-badge ${won ? 'win' : 'loss'}">${won ? '🏆 Victoire +2⭐' : '🥈 Défaite +1⭐'}</div>` : ''}
+          </div>
+          <div class="match-teams">
+            <div class="match-team ${winA ? 'winner' : 'lost'}">
+              ${winA ? trophy + ' ' : ''}${escapeHtml(m.joueurA)}
+              <span class="team-pts">+${m.starsA}⭐</span>
+            </div>
+            <div class="match-team match-team-b ${winA ? 'lost' : 'winner'}">
+              <span class="team-pts">+${m.starsB}⭐</span>
+              ${escapeHtml(m.joueurB)}${!winA ? ' ' + trophy : ''}
+            </div>
+          </div>
+          ${sets.length ? `<div class="match-scores">${sets.join('')}</div>` : ''}
+        </div>`;
+    }
+
+    // ─── Saisie junior ───
+    function populateJSelects() {
+      const opts = getJuniorsSource()
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name, 'fr'))
+        .map(j => `<option value="${escapeHtml(j.name)}" data-green="${j.green ? 1 : 0}">${escapeHtml(j.name)}${j.green ? ' 🟢' : ''}</option>`)
+        .join('');
+      const blank = '<option value="">— Choisir un joueur —</option>';
+      ['jselectA', 'jselectB'].forEach(id => {
+        const sel = $(id);
+        if (!sel) return;
+        const cur = sel.value;
+        sel.innerHTML = blank + opts;
+        sel.value = cur;
+      });
+    }
+
+    function resetJResultForm() {
+      state.jResult = { joueurA:null, pinAok:false, joueurB:null, pinBok:false, winner:null };
+      ['jselectA','jselectB','jpinA','jpinB','jscore1','jscore2','jscore3'].forEach(id => { const el = $(id); if (el) el.value = ''; });
+      $('jpinStatusA').innerHTML = ''; $('jpinStatusA').className = 'pin-status';
+      $('jpinStatusB').innerHTML = ''; $('jpinStatusB').className = 'pin-status';
+      $('jpinErrorA').textContent = '';
+      $('jpinErrorB').textContent = '';
+      $('jstep-2').classList.add('hidden');
+      $('jstep-3').classList.add('hidden');
+      $('jscore3Wrap').classList.add('hidden');
+      $('jaddSet3Btn').classList.remove('active');
+      $('jgreenBallsBanner').classList.add('hidden');
+      $('jresultPreview').innerHTML = '';
+      $('jsaveStatus').className = 'save-status';
+      $('jsaveStatus').textContent = '';
+      document.querySelectorAll('input[name="jwinnerR"]').forEach(r => r.checked = false);
+      updateJStepIndicator();
+    }
+
+    function toggleJSet3() {
+      const wrap = $('jscore3Wrap');
+      const open = wrap.classList.contains('hidden');
+      wrap.classList.toggle('hidden', !open);
+      $('jaddSet3Btn').classList.toggle('active', open);
+      if (!open) { $('jscore3').value = ''; }
+      renderJResultPreview();
+    }
+
+    function updateJStepIndicator() {
+      const s1 = state.jResult.pinAok;
+      const s2 = state.jResult.pinBok;
+      $('jdot-1').classList.toggle('done',   s1);
+      $('jdot-2').classList.toggle('active', s1 && !s2);
+      $('jdot-2').classList.toggle('done',   s2);
+      $('jdot-3').classList.toggle('active', s2);
+      $('jline-1').classList.toggle('done',  s1);
+      $('jline-2').classList.toggle('done',  s2);
+    }
+
+    function onJSelectA() {
+      state.jResult.joueurA = $('jselectA').value || null;
+      state.jResult.pinAok = false;
+      $('jpinA').value = '';
+      $('jpinStatusA').innerHTML = ''; $('jpinStatusA').className = 'pin-status';
+      $('jpinErrorA').textContent = '';
+      $('jstep-2').classList.add('hidden');
+      $('jstep-3').classList.add('hidden');
+      const optsB = getJuniorsSource()
+        .filter(j => j.name !== state.jResult.joueurA)
+        .sort((a,b) => a.name.localeCompare(b.name, 'fr'))
+        .map(j => `<option value="${escapeHtml(j.name)}">${escapeHtml(j.name)}${j.green ? ' 🟢' : ''}</option>`)
+        .join('');
+      $('jselectB').innerHTML = '<option value="">— Choisir un joueur —</option>' + optsB;
+      state.jResult.joueurB = null;
+      state.jResult.pinBok = false;
+      updateJStepIndicator();
+    }
+
+    async function onJPinAInput() {
+      const pin = $('jpinA').value;
+      $('jpinErrorA').textContent = '';
+      $('jpinStatusA').className = 'pin-status';
+      $('jpinStatusA').innerHTML = '';
+      if (pin.length !== 4) { state.jResult.pinAok = false; $('jstep-2').classList.add('hidden'); updateJStepIndicator(); return; }
+      if (!state.jResult.joueurA) { $('jpinErrorA').textContent = "Sélectionne d'abord ton nom."; return; }
+      $('jpinStatusA').className = 'pin-status loading'; $('jpinStatusA').innerHTML = '…';
+      const ok = await verifyJPin(state.jResult.joueurA, pin);
+      if (ok) {
+        state.jResult.pinAok = true;
+        $('jpinStatusA').className = 'pin-status ok'; $('jpinStatusA').innerHTML = '✓';
+        $('jstep-2').classList.remove('hidden');
+      } else {
+        state.jResult.pinAok = false;
+        $('jpinStatusA').className = 'pin-status error'; $('jpinStatusA').innerHTML = '✕';
+        $('jpinErrorA').textContent = 'Code PIN incorrect.';
+        $('jstep-2').classList.add('hidden');
+      }
+      updateJStepIndicator();
+    }
+
+    function onJSelectB() {
+      state.jResult.joueurB = $('jselectB').value || null;
+      state.jResult.pinBok = false;
+      $('jpinB').value = '';
+      $('jpinStatusB').innerHTML = ''; $('jpinStatusB').className = 'pin-status';
+      $('jpinErrorB').textContent = '';
+      $('jstep-3').classList.add('hidden');
+      $('jwinnerLabelA').textContent = state.jResult.joueurA || 'Joueur A';
+      $('jwinnerLabelB').textContent = state.jResult.joueurB || 'Joueur B';
+      updateJStepIndicator();
+    }
+
+    async function onJPinBInput() {
+      const pin = $('jpinB').value;
+      $('jpinErrorB').textContent = '';
+      $('jpinStatusB').className = 'pin-status';
+      $('jpinStatusB').innerHTML = '';
+      if (pin.length !== 4) { state.jResult.pinBok = false; $('jstep-3').classList.add('hidden'); updateJStepIndicator(); return; }
+      if (!state.jResult.joueurB) { $('jpinErrorB').textContent = "Sélectionne d'abord l'adversaire."; return; }
+      $('jpinStatusB').className = 'pin-status loading'; $('jpinStatusB').innerHTML = '…';
+      const ok = await verifyJPin(state.jResult.joueurB, pin);
+      if (ok) {
+        state.jResult.pinBok = true;
+        $('jpinStatusB').className = 'pin-status ok'; $('jpinStatusB').innerHTML = '✓';
+        $('jstep-3').classList.remove('hidden');
+        $('jwinnerLabelA').textContent = state.jResult.joueurA;
+        $('jwinnerLabelB').textContent = state.jResult.joueurB;
+        // Alerte balles vertes
+        const jA = state.juniorsLive.find(j => j.name === state.jResult.joueurA);
+        const jB = state.juniorsLive.find(j => j.name === state.jResult.joueurB);
+        const needGreen = (jA && jA.green) || (jB && jB.green);
+        $('jgreenBallsBanner').classList.toggle('hidden', !needGreen);
+      } else {
+        state.jResult.pinBok = false;
+        $('jpinStatusB').className = 'pin-status error'; $('jpinStatusB').innerHTML = '✕';
+        $('jpinErrorB').textContent = 'Code PIN incorrect.';
+        $('jstep-3').classList.add('hidden');
+      }
+      updateJStepIndicator();
+    }
+
+    async function verifyJPin(joueurName, pin) {
+      if (!firebaseReady) return pin === '0000';
+      try {
+        const q = await db.collection('juniors').where('name', '==', joueurName).limit(1).get();
+        if (q.empty) return false;
+        const data = q.docs[0].data();
+        if (data.pinHash) {
+          const inputHash = await sha256Hex(String(pin));
+          return inputHash === data.pinHash;
+        }
+        return String(data.pin) === String(pin);
+      } catch (e) { console.error('verifyJPin:', e); return false; }
+    }
+
+    function renderJResultPreview() {
+      const winnerR = document.querySelector('input[name="jwinnerR"]:checked');
+      if (!winnerR) { $('jresultPreview').innerHTML = ''; return; }
+      const winner = winnerR.value;
+      const winnerName = winner === 'A' ? state.jResult.joueurA : state.jResult.joueurB;
+
+      $('jresultPreview').innerHTML = `
+        <div class="winner-banner">
+          <span class="winner-icon">🏆</span>
+          <div class="winner-text">
+            <div class="winner-label">Vainqueur</div>
+            <div class="winner-name">${escapeHtml(winnerName)}</div>
+          </div>
+        </div>
+        <div class="result-grid">
+          <div class="result-team ${winner === 'A' ? 'win' : 'lose'}">
+            <div class="result-team-name">${escapeHtml(state.jResult.joueurA)}</div>
+            <div class="result-pts">+${winner === 'A' ? 2 : 1}⭐</div>
+            <div class="result-pts-label">${winner === 'A' ? '🏆 Vainqueur' : '🥈 Perdant'}</div>
+          </div>
+          <div class="result-team ${winner === 'B' ? 'win' : 'lose'}">
+            <div class="result-team-name">${escapeHtml(state.jResult.joueurB)}</div>
+            <div class="result-pts">+${winner === 'B' ? 2 : 1}⭐</div>
+            <div class="result-pts-label">${winner === 'B' ? '🏆 Vainqueur' : '🥈 Perdant'}</div>
+          </div>
+        </div>`;
+    }
+
+    async function confirmAndSaveJunior() {
+      const status = $('jsaveStatus');
+      status.className = 'save-status'; status.textContent = '';
+
+      if (!state.jResult.pinAok || !state.jResult.pinBok) {
+        status.className = 'save-status error'; status.textContent = 'Les deux PINs doivent être validés.'; return;
+      }
+      const winnerR = document.querySelector('input[name="jwinnerR"]:checked');
+      if (!winnerR) { status.className = 'save-status error'; status.textContent = 'Sélectionne le vainqueur.'; return; }
+      const s1 = $('jscore1').value.trim();
+      const s2 = $('jscore2').value.trim();
+      const s3 = $('jscore3Wrap').classList.contains('hidden') ? '' : $('jscore3').value.trim();
+      if (!s1 || !s2) { status.className = 'save-status error'; status.textContent = 'Sets 1 et 2 requis.'; return; }
+      if (!firebaseReady) { status.className = 'save-status error'; status.textContent = 'Firebase non configuré.'; return; }
+
+      $('jsaveBtn').disabled = true;
+      status.textContent = 'Enregistrement…';
+
+      const winner = winnerR.value;
+      const jA = state.juniorsLive.find(j => j.name === state.jResult.joueurA);
+      const jB = state.juniorsLive.find(j => j.name === state.jResult.joueurB);
+      const starsA = winner === 'A' ? 2 : 1;
+      const starsB = winner === 'B' ? 2 : 1;
+      const greenBalls = !!((jA && jA.green) || (jB && jB.green));
+
+      try {
+        const okA = await verifyJPin(jA.name, $('jpinA').value);
+        const okB = await verifyJPin(jB.name, $('jpinB').value);
+        if (!okA || !okB) throw new Error('PIN invalide');
+
+        await db.collection('juniors_matches').add({
+          joueurA: jA.name, joueurB: jB.name,
+          vainqueur: winner,
+          scores: { set1: s1, set2: s2, ...(s3 ? { set3: s3 } : {}) },
+          starsA, starsB, greenBalls,
+          date: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        await db.collection('juniors').doc(jA.id).update({ stars: firebase.firestore.FieldValue.increment(starsA) });
+        await db.collection('juniors').doc(jB.id).update({ stars: firebase.firestore.FieldValue.increment(starsB) });
+
+        status.className = 'save-status ok';
+        status.innerHTML = `✓ Match enregistré · ${escapeHtml(jA.name)} +${starsA}⭐ · ${escapeHtml(jB.name)} +${starsB}⭐`;
+        setTimeout(() => resetJResultForm(), 2500);
+      } catch (e) {
+        console.error(e);
+        status.className = 'save-status error';
+        status.textContent = 'Erreur : ' + e.message;
+      } finally {
+        $('jsaveBtn').disabled = false;
+      }
+    }
+
+    // ─── Historique matchs juniors ───
+    function renderJMatchesFilter() {
+      const sel = $('jmatchesFilter');
+      if (!sel) return;
+      const cur = sel.value;
+      const opts = getJuniorsSource()
+        .slice()
+        .sort((a,b) => a.name.localeCompare(b.name, 'fr'))
+        .map(j => `<option value="${escapeHtml(j.name)}">${escapeHtml(j.name)}</option>`)
+        .join('');
+      sel.innerHTML = '<option value="">Tous les matchs</option>' + opts;
+      sel.value = cur;
+    }
+
+    function renderJuniorMatchesList() {
+      const body = $('jmatchesBody');
+      if (!body) return;
+      const filter = $('jmatchesFilter').value;
+      const matches = filter
+        ? state.juniorsMatchesLive.filter(m => m.joueurA === filter || m.joueurB === filter)
+        : state.juniorsMatchesLive;
+      $('jmatchesSub').textContent = matches.length
+        ? `${matches.length} match${matches.length > 1 ? 's' : ''} ${filter ? '· ' + filter : '· du plus récent au plus ancien'}`
+        : 'Aucun match';
+      body.innerHTML = matches.length
+        ? matches.map(m => renderJMatchCard(m, filter || null)).join('')
+        : '<div class="empty-state">Aucun match enregistré.</div>';
+    }
+
+    // ─── Admin Juniors ───
+    async function seedJuniors() {
+      if (!firebaseReady) { alert('Firebase non configuré.'); return; }
+      if (!state.adminCode) { alert('Reconnecte-toi à l\'admin.'); return; }
+      $('seedJBtn').disabled = true;
+      const out = $('seedJResult');
+      out.innerHTML = '<div class="loading-state">Création des joueurs…</div>';
+      try {
+        const existing = await db.collection('juniors').limit(1).get();
+        if (!existing.empty) {
+          out.innerHTML = '<div class="empty-state">Les joueurs juniors existent déjà.</div>';
+          $('seedJBtn').disabled = false; return;
+        }
+        const generated = [];
+        for (const j of JUNIORS) {
+          const pin = randomPin();
+          const pinHash = await sha256Hex(pin);
+          const pinEnc  = await encryptWithCode(pin, state.adminCode);
+          generated.push({ ...j, pin, pinHash, pinEnc, stars: 0 });
+        }
+        const batch = db.batch();
+        generated.forEach(j => {
+          const { pin, ...toSave } = j;
+          batch.set(db.collection('juniors').doc(), toSave);
+        });
+        await batch.commit();
+        out.innerHTML = `
+          <div style="font-size:0.85rem;font-weight:500;margin-bottom:0.6rem;color:var(--primary-dark);">
+            ✓ ${generated.length} joueurs juniors créés. PINs à distribuer :
+          </div>
+          <div class="seed-pin-list">
+            ${generated.map(j => `<div class="seed-pin-item"><span>${escapeHtml(j.name)}${j.green?' 🟢':''}</span><span class="pin-val">${j.pin}</span></div>`).join('')}
+          </div>
+          <button class="ghost-btn" style="margin-top:0.8rem;" onclick="window.print()">🖨️ Imprimer</button>`;
+      } catch (e) {
+        console.error(e);
+        out.innerHTML = '<div class="save-status error">Erreur : ' + escapeHtml(e.message) + '</div>';
+      } finally {
+        $('seedJBtn').disabled = false;
+      }
+    }
+
+    async function addNewJunior() {
+      if (!firebaseReady) { alert('Firebase non configuré.'); return; }
+      if (!state.adminCode) { alert('Reconnecte-toi à l\'admin.'); return; }
+      const name = $('newJName').value.trim();
+      const green = document.querySelector('input[name="newJGreen"]:checked')?.value === 'yes';
+      const status = $('addJStatus');
+      const pinOut = $('addJPin');
+      status.className = 'save-status'; status.textContent = ''; pinOut.innerHTML = '';
+      if (!name) { status.className = 'save-status error'; status.textContent = 'Nom requis.'; return; }
+      if (state.juniorsLive.some(j => j.name.toLowerCase() === name.toLowerCase())) {
+        status.className = 'save-status error'; status.textContent = 'Ce joueur existe déjà.'; return;
+      }
+      $('addJBtn').disabled = true;
+      status.textContent = 'Création…';
+      try {
+        const pin     = randomPin();
+        const pinHash = await sha256Hex(pin);
+        const pinEnc  = await encryptWithCode(pin, state.adminCode);
+        await db.collection('juniors').add({ name, green, stars: 0, pinHash, pinEnc });
+        status.className = 'save-status ok'; status.textContent = '✓ Joueur ajouté';
+        pinOut.innerHTML = `<div class="seed-pin-list" style="margin-top:0.8rem;">
+          <div class="seed-pin-item"><span>${escapeHtml(name)}${green?' 🟢':''}</span><span class="pin-val">${pin}</span></div>
+        </div>`;
+        $('newJName').value = '';
+      } catch (e) {
+        status.className = 'save-status error'; status.textContent = 'Erreur : ' + e.message;
+      } finally {
+        $('addJBtn').disabled = false;
+      }
+    }
+
+    async function renderAdminJPins() {
+      const wrap = $('adminJPinsList');
+      if (!wrap) return;
+      if (state.juniorsLive.length === 0) {
+        wrap.innerHTML = '<div class="empty-state">Aucun joueur. Initialise d\'abord le tournoi junior.</div>'; return;
+      }
+      if (!state.adminCode) { wrap.innerHTML = '<div class="empty-state">Reconnecte-toi à l\'admin.</div>'; return; }
+      wrap.innerHTML = '<div class="loading-state">Déchiffrement des PINs…</div>';
+      const decrypted = [];
+      for (const j of state.juniorsLive) {
+        let plain = '????';
+        try {
+          if (j.pinEnc)   plain = await decryptWithCode(j.pinEnc, state.adminCode);
+          else if (j.pin) plain = j.pin;
+        } catch (e) { plain = '⚠ erreur'; }
+        decrypted.push({ ...j, plainPin: plain });
+      }
+      wrap.innerHTML = decrypted
+        .sort((a,b) => a.name.localeCompare(b.name, 'fr'))
+        .map(j => `
+          <div class="admin-pin-row">
+            <div>${escapeHtml(j.name)}${j.green?' 🟢':''}</div>
+            <input type="text" maxlength="4" pattern="[0-9]{4}" value="${escapeHtml(j.plainPin)}" id="jnewpin-${j.id}">
+            <div class="admin-pin-actions">
+              <button onclick="toggleJuniorGreen('${j.id}', ${j.green ? 'true' : 'false'})" title="Basculer catégorie verte">${j.green ? '🟢' : '⚪'}</button>
+              <button onclick="updateJPin('${j.id}', '${escapeHtml(j.name).replace(/'/g,"\\'")}')">Modifier</button>
+              <button class="admin-del-btn" onclick="deleteJunior('${j.id}', '${escapeHtml(j.name).replace(/'/g,"\\'")}')">Supprimer</button>
+            </div>
+          </div>`).join('');
+    }
+
+    async function toggleJuniorGreen(id, currentGreen) {
+      try {
+        await db.collection('juniors').doc(id).update({ green: !currentGreen });
+      } catch (e) { alert('Erreur : ' + e.message); }
+    }
+
+    async function updateJPin(id, name) {
+      const newPin = $('jnewpin-' + id).value.trim();
+      if (!/^\d{4}$/.test(newPin)) { alert('PIN doit être 4 chiffres.'); return; }
+      if (!state.adminCode) { alert('Reconnecte-toi à l\'admin.'); return; }
+      try {
+        const pinHash = await sha256Hex(newPin);
+        const pinEnc  = await encryptWithCode(newPin, state.adminCode);
+        await db.collection('juniors').doc(id).update({
+          pinHash, pinEnc, pin: firebase.firestore.FieldValue.delete()
+        });
+        alert(`PIN de ${name} mis à jour.`);
+      } catch (e) { alert('Erreur : ' + e.message); }
+    }
+
+    async function deleteJunior(id, name) {
+      if (!confirm(`Supprimer le joueur "${name}" ?`)) return;
+      try { await db.collection('juniors').doc(id).delete(); }
+      catch (e) { alert('Erreur : ' + e.message); }
+    }
+
+    function renderAdminJMatches() {
+      const wrap = $('adminJMatchesList');
+      if (!wrap) return;
+      if (state.juniorsMatchesLive.length === 0) {
+        wrap.innerHTML = '<div class="empty-state">Aucun match enregistré.</div>'; return;
+      }
+      wrap.innerHTML = state.juniorsMatchesLive.map(m => {
+        const setsList = [];
+        if (m.scores?.set1) setsList.push(m.scores.set1);
+        if (m.scores?.set2) setsList.push(m.scores.set2);
+        if (m.scores?.set3) setsList.push(m.scores.set3);
+        if (setsList.length === 0 && m.score) setsList.push(m.score);
+        const setsTxt = setsList.length ? setsList.join(' / ') : '?';
+        return `
+        <div class="admin-match-row">
+          <div class="admin-match-info">
+            <div class="a-teams">${escapeHtml(m.joueurA)} vs ${escapeHtml(m.joueurB)} · ${m.vainqueur === 'A' ? '🏆 A' : '🏆 B'}${m.greenBalls ? ' · 🟢' : ''}</div>
+            <div class="a-date">${fmtDate(m.date)} · ${escapeHtml(m.joueurA)} +${m.starsA}⭐ / ${escapeHtml(m.joueurB)} +${m.starsB}⭐ · ${escapeHtml(setsTxt)}${m.editedAt ? ' · ✏️ modifié' : ''}</div>
+          </div>
+          <div class="admin-match-actions">
+            <button class="admin-edit-btn" onclick="openEditJuniorMatch('${m.id}')">Modifier</button>
+            <button class="admin-del-btn"  onclick="deleteJuniorMatch('${m.id}')">Supprimer</button>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    // ─── Modale édition d'un match junior ───
+    let editingJMatchId = null;
+
+    function openEditJuniorMatch(id) {
+      const m = state.juniorsMatchesLive.find(x => x.id === id);
+      if (!m) return;
+      editingJMatchId = id;
+
+      const body = $('editMatchBody');
+      // Backward-compat : ancien format avec un seul "score"
+      const s1Val = m.scores?.set1 || (m.score || '');
+      const s2Val = m.scores?.set2 || '';
+      const s3Val = m.scores?.set3 || '';
+
+      body.innerHTML = `
+        <div class="modal-teams-header">
+          <strong>${escapeHtml(m.joueurA)}</strong>
+          <span style="color:var(--text-light);"> vs </span>
+          <strong>${escapeHtml(m.joueurB)}</strong>
+          ${m.greenBalls ? '<div style="font-size:0.78rem;color:#166534;margin-top:0.4rem;">🟢 balles vertes</div>' : ''}
+        </div>
+
+        <div class="form-group" style="margin-bottom:1.1rem;">
+          <label class="form-label" style="margin-bottom:0.45rem;">Vainqueur</label>
+          <div class="radio-group">
+            <label class="radio-label">
+              <input type="radio" name="editJWinner" value="A" ${m.vainqueur === 'A' ? 'checked' : ''}>
+              ${escapeHtml(m.joueurA)}
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="editJWinner" value="B" ${m.vainqueur === 'B' ? 'checked' : ''}>
+              ${escapeHtml(m.joueurB)}
+            </label>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom:0.9rem;">
+          <label class="form-label">Set 1 <span style="color:var(--text-light);font-weight:400;">(short set à 4 jeux)</span></label>
+          <input type="text" class="form-input score-input" id="editJScore1" value="${escapeHtml(s1Val)}" maxlength="5" placeholder="ex. 4-2">
+        </div>
+        <div class="form-group" style="margin-bottom:0.9rem;">
+          <label class="form-label">Set 2 <span style="color:var(--text-light);font-weight:400;">(short set à 4 jeux)</span></label>
+          <input type="text" class="form-input score-input" id="editJScore2" value="${escapeHtml(s2Val)}" maxlength="5" placeholder="ex. 4-3">
+        </div>
+        <div class="form-group" style="margin-bottom:0.4rem;">
+          <label class="form-label">Set 3 <span style="color:var(--text-light);font-weight:400;">(tie-break, laisser vide si match en 2 sets)</span></label>
+          <input type="text" class="form-input score-input" id="editJScore3" value="${escapeHtml(s3Val)}" maxlength="5" placeholder="ex. 7-5">
+        </div>
+
+        <div style="font-size:0.78rem;color:var(--text-light);padding:0.7rem 0.85rem;background:var(--primary-light);border-radius:var(--radius);margin-top:0.8rem;line-height:1.5;">
+          ℹ️ En sauvegardant, les étoiles seront recalculées (vainqueur +2⭐, perdant +1⭐) et les compteurs des deux joueurs mis à jour automatiquement.
+        </div>
+
+        <div class="modal-actions">
+          <button class="btn-cancel" onclick="closeEditModal()">Annuler</button>
+          <button class="btn-calc"   onclick="saveEditedJuniorMatch()" id="saveJEditBtn">Enregistrer</button>
+        </div>
+        <div id="editJStatus" class="save-status"></div>
+      `;
+
+      $('editModal').classList.remove('hidden');
+    }
+
+    async function saveEditedJuniorMatch() {
+      if (!editingJMatchId) return;
+      const status = $('editJStatus');
+      status.className = 'save-status'; status.textContent = '';
+
+      const newWinner = document.querySelector('input[name="editJWinner"]:checked')?.value;
+      const s1 = $('editJScore1').value.trim();
+      const s2 = $('editJScore2').value.trim();
+      const s3 = $('editJScore3').value.trim();
+
+      if (!newWinner) { status.className = 'save-status error'; status.textContent = 'Sélectionne le vainqueur.'; return; }
+      if (!s1 || !s2) { status.className = 'save-status error'; status.textContent = 'Sets 1 et 2 requis.'; return; }
+
+      $('saveJEditBtn').disabled = true;
+      status.textContent = 'Enregistrement…';
+
+      try {
+        await db.runTransaction(async (tx) => {
+          const matchRef = db.collection('juniors_matches').doc(editingJMatchId);
+          const matchSnap = await tx.get(matchRef);
+          if (!matchSnap.exists) throw new Error('Match introuvable');
+          const oldData = matchSnap.data();
+
+          const jA = state.juniorsLive.find(j => j.name === oldData.joueurA);
+          const jB = state.juniorsLive.find(j => j.name === oldData.joueurB);
+          if (!jA || !jB) throw new Error('Joueurs introuvables');
+
+          const newStarsA = newWinner === 'A' ? 2 : 1;
+          const newStarsB = newWinner === 'B' ? 2 : 1;
+          const diffA = newStarsA - (oldData.starsA || 0);
+          const diffB = newStarsB - (oldData.starsB || 0);
+
+          const updateData = {
+            vainqueur: newWinner,
+            scores:    { set1: s1, set2: s2, ...(s3 ? { set3: s3 } : {}) },
+            starsA:    newStarsA,
+            starsB:    newStarsB,
+            editedAt:  firebase.firestore.FieldValue.serverTimestamp()
+          };
+          // Si l'ancien format avait un seul "score", on le supprime
+          if (oldData.score !== undefined) {
+            updateData.score = firebase.firestore.FieldValue.delete();
+          }
+
+          tx.update(matchRef, updateData);
+          tx.update(db.collection('juniors').doc(jA.id), {
+            stars: firebase.firestore.FieldValue.increment(diffA)
+          });
+          tx.update(db.collection('juniors').doc(jB.id), {
+            stars: firebase.firestore.FieldValue.increment(diffB)
+          });
+        });
+
+        status.className = 'save-status ok';
+        status.textContent = '✓ Match modifié, étoiles ajustées';
+        setTimeout(() => closeEditModal(), 1500);
+      } catch (e) {
+        console.error(e);
+        status.className = 'save-status error';
+        status.textContent = 'Erreur : ' + e.message;
+      } finally {
+        $('saveJEditBtn').disabled = false;
+      }
+    }
+
+    async function deleteJuniorMatch(id) {
+      const m = state.juniorsMatchesLive.find(x => x.id === id);
+      if (!m) return;
+      if (!confirm(`Supprimer ce match ?\nLes étoiles seront soustraites.`)) return;
+      try {
+        await db.runTransaction(async (tx) => {
+          const matchRef = db.collection('juniors_matches').doc(id);
+          const snap = await tx.get(matchRef);
+          if (!snap.exists) return;
+          const data = snap.data();
+          const jA = state.juniorsLive.find(j => j.name === data.joueurA);
+          const jB = state.juniorsLive.find(j => j.name === data.joueurB);
+          if (jA) tx.update(db.collection('juniors').doc(jA.id), { stars: firebase.firestore.FieldValue.increment(-(data.starsA || 0)) });
+          if (jB) tx.update(db.collection('juniors').doc(jB.id), { stars: firebase.firestore.FieldValue.increment(-(data.starsB || 0)) });
+          tx.delete(matchRef);
+        });
+      } catch (e) { alert('Erreur : ' + e.message); }
+    }
+
+    // ─────── DÉMARRAGE ───────
+    subscribeFirestore();
+    renderTeamsLive();
+    populateSelects();
+    renderMatchesFilter();
+    renderJuniorsList();
+    populateJSelects();
+    renderJMatchesFilter();
+
+    // Restaurer le mode depuis localStorage
+    try {
+      const savedMode = localStorage.getItem('tcm-mode');
+      if (savedMode === 'junior') switchMode('junior');
+      else                        document.body.setAttribute('data-mode', 'adult');
+    } catch (e) {
+      document.body.setAttribute('data-mode', 'adult');
+    }
+
+    // Réinitialiser les formulaires de saisie quand on quitte l'onglet
+    const originalSwitchTab = switchTab;
+    window.switchTab = function(tab) {
+      originalSwitchTab(tab);
+      state.profile  = null;
+      state.jProfile = null;
+      if (tab === 'result')   { resetResultForm(); }
+      if (tab === 'matches')  { renderMatchesList(); }
+      if (tab === 'jresult')  { resetJResultForm(); }
+      if (tab === 'jmatches') { renderJuniorMatchesList(); }
+      if (tab === 'jplayers') { renderJuniorsList(); }
+    };
+  </script>
+
+</body>
+</html>
