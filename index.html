@@ -65,13 +65,18 @@
     /* ============================================================
        HEADER
     ============================================================ */
+    /* Topbar = header + onglets, sticky en un seul bloc */
+    .topbar {
+      position: -webkit-sticky;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--white);
+    }
     .header {
       background: var(--white);
       border-bottom: 1px solid var(--border);
       box-shadow: var(--shadow-sm);
-      position: sticky;
-      top: 0;
-      z-index: 100;
     }
     .header-inner {
       max-width: 720px;
@@ -134,9 +139,6 @@
       display: flex;
       border-bottom: 1px solid var(--border);
       background: var(--white);
-      position: sticky;
-      top: 64px;          /* juste sous le header (height 64px) */
-      z-index: 50;
     }
     .tabs-inner {
       max-width: 720px;
@@ -1195,6 +1197,8 @@
 </head>
 <body>
 
+  <!-- TOPBAR sticky : header + onglets bloqués ensemble en haut -->
+  <div class="topbar">
   <!-- HEADER -->
   <header class="header">
     <div class="header-inner">
@@ -1249,6 +1253,7 @@
       </button>
     </div>
   </nav>
+  </div><!-- /topbar -->
 
   <!-- MAIN -->
   <main>
@@ -3378,7 +3383,12 @@
 
       const sorted = [...data].sort((a, b) => {
         if (state.jSort === 'alpha') return a.name.localeCompare(b.name, 'fr');
+        // Classement : par étoiles desc, puis fallback sur l'ordre de la liste JUNIORS
+        // (pour que le tri reste visuellement distinct du tri alphabétique même quand tout le monde a 0⭐)
         if (b.stars !== a.stars) return b.stars - a.stars;
+        const aIdx = JUNIORS.findIndex(j => j.name === a.name);
+        const bIdx = JUNIORS.findIndex(j => j.name === b.name);
+        if (aIdx >= 0 && bIdx >= 0) return aIdx - bIdx;
         return a.name.localeCompare(b.name, 'fr');
       });
 
