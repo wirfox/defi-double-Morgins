@@ -525,8 +525,18 @@
       /* iOS : autorise UNIQUEMENT le pan horizontal (le vertical scroll passe à la page) */
       touch-action: pan-x;
       -webkit-overflow-scrolling: touch;
+      /* Scroll snap : les onglets s'accrochent à des positions précises */
+      scroll-snap-type: x mandatory;
+      -webkit-scroll-snap-type: x mandatory;
+      /* Empêche tout drag/sélection du contenu */
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
     }
     .tabs-inner::-webkit-scrollbar { display: none; }
+    .tab-btn {
+      scroll-snap-align: start;
+    }
 
     /* Barre de tri */
     .sort-bar {
