@@ -2276,15 +2276,22 @@
       const threeSetMatches = myMatches.filter(m => m.scores && m.scores.set3);
       const threeSetCount = threeSetMatches.length;
 
-      // Match le plus serré (3 sets, écart minimum sur set 3)
-      const closest = threeSetMatches.reduce((best, m) => {
-        const [a, b] = (m.scores.set3 || '').split('-').map(Number);
-        if (isNaN(a) || isNaN(b)) return best;
-        const diff = Math.abs(a - b);
-        return (!best || diff < best.diff) ? { match: m, diff } : best;
+      // Match le plus serré : écart total de jeux sur tous les sets (le plus petit = le plus serré)
+      const closest = myMatches.reduce((best, m) => {
+        if (!m.scores) return best;
+        let totalDiff = 0;
+        let valid = false;
+        ['set1','set2','set3'].forEach(k => {
+          if (m.scores[k]) {
+            const [a, b] = m.scores[k].split('-').map(Number);
+            if (!isNaN(a) && !isNaN(b)) { totalDiff += Math.abs(a - b); valid = true; }
+          }
+        });
+        if (!valid) return best;
+        return (!best || totalDiff < best.diff) ? { match: m, diff: totalDiff } : best;
       }, null);
       const closestTxt = closest
-        ? `Set 3 ${closest.match.scores.set3} vs ${escapeHtml(closest.match.equipeA === name ? closest.match.equipeB : closest.match.equipeA)}`
+        ? `${closest.diff} jeu${closest.diff > 1 ? 'x' : ''} d'écart vs ${escapeHtml(closest.match.equipeA === name ? closest.match.equipeB : closest.match.equipeA)}`
         : '—';
 
       // V/D bar
