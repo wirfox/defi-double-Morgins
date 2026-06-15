@@ -1,0 +1,5 @@
+# NE JAMAIS committer ces fichiers — ils contiennent des secrets ou sont volumineux
+node_modules/
+serviceAccountKey.json
+.env
+*.log
