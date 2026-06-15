@@ -3023,21 +3023,23 @@
             <div>${escapeHtml(t.name)}</div>
             <input type="text" maxlength="4" pattern="[0-9]{4}" value="${escapeHtml(t.plainPin)}" id="newpin-${t.id}">
             <div class="admin-pin-actions">
-              <button onclick="updatePin('${t.id}', '${escapeHtml(t.name).replace(/'/g, "\\'")}')">Modifier</button>
-              <button class="admin-del-btn" onclick="deleteTeam('${t.id}', '${escapeHtml(t.name).replace(/'/g, "\\'")}')">Supprimer</button>
+              <button onclick="updatePin('${t.id}')">Modifier</button>
+              <button class="admin-del-btn" onclick="deleteTeam('${t.id}')">Supprimer</button>
             </div>
           </div>`).join('');
     }
 
-    async function deleteTeam(id, name) {
+    async function deleteTeam(id) {
       if (!firebaseReady) { alert('Firebase non configuré.'); return; }
+      const name = (state.teamsLive.find(t => t.id === id) || {}).name || 'cette équipe';
       if (!confirm(`Supprimer l'équipe "${name}" ?\n\nLes matchs déjà joués par cette équipe restent dans l'historique (mais sans profil cliquable). À utiliser en cas d'erreur de saisie initiale.`)) return;
       try {
         await db.collection('teams').doc(id).delete();
       } catch (e) { alert('Erreur : ' + e.message); }
     }
 
-    async function updatePin(id, name) {
+    async function updatePin(id) {
+      const name = (state.teamsLive.find(t => t.id === id) || {}).name || 'équipe';
       const newPin = $('newpin-' + id).value.trim();
       if (!/^\d{4}$/.test(newPin)) { alert('PIN doit être 4 chiffres.'); return; }
       if (!state.adminCode) { alert('Reconnecte-toi à l\'admin.'); return; }
@@ -3853,8 +3855,8 @@
             <input type="text" maxlength="4" pattern="[0-9]{4}" value="${escapeHtml(j.plainPin)}" id="jnewpin-${j.id}">
             <div class="admin-pin-actions">
               <button onclick="toggleJuniorGreen('${j.id}', ${j.green ? 'true' : 'false'})" title="Basculer catégorie verte">${j.green ? '🟢' : '⚪'}</button>
-              <button onclick="updateJPin('${j.id}', '${escapeHtml(j.name).replace(/'/g,"\\'")}')">Modifier</button>
-              <button class="admin-del-btn" onclick="deleteJunior('${j.id}', '${escapeHtml(j.name).replace(/'/g,"\\'")}')">Supprimer</button>
+              <button onclick="updateJPin('${j.id}')">Modifier</button>
+              <button class="admin-del-btn" onclick="deleteJunior('${j.id}')">Supprimer</button>
             </div>
           </div>`).join('');
     }
@@ -3865,7 +3867,8 @@
       } catch (e) { alert('Erreur : ' + e.message); }
     }
 
-    async function updateJPin(id, name) {
+    async function updateJPin(id) {
+      const name = (state.juniorsLive.find(j => j.id === id) || {}).name || 'joueur';
       const newPin = $('jnewpin-' + id).value.trim();
       if (!/^\d{4}$/.test(newPin)) { alert('PIN doit être 4 chiffres.'); return; }
       if (!state.adminCode) { alert('Reconnecte-toi à l\'admin.'); return; }
@@ -3879,7 +3882,8 @@
       } catch (e) { alert('Erreur : ' + e.message); }
     }
 
-    async function deleteJunior(id, name) {
+    async function deleteJunior(id) {
+      const name = (state.juniorsLive.find(j => j.id === id) || {}).name || 'ce joueur';
       if (!confirm(`Supprimer le joueur "${name}" ?`)) return;
       try { await db.collection('juniors').doc(id).delete(); }
       catch (e) { alert('Erreur : ' + e.message); }
