@@ -36,8 +36,12 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ---- helpers ----
+    // On valide le TYPE et la LONGUEUR, mais PAS un format strict :
+    // l'app n'impose pas elle-même "chiffre-chiffre", donc imposer un format
+    // ici rejetterait une faute de frappe et casserait la saisie. Le XSS via
+    // un score est déjà neutralisé à l'affichage (escapeHtml).
     function isScore(s) {
-      return s is string && s.size() <= 10 && s.matches('^[0-9]{1,2}-[0-9]{1,2}$');
+      return s is string && s.size() >= 1 && s.size() <= 12;
     }
     function validScores(sc) {
       return sc is map
@@ -105,11 +109,12 @@ service cloud.firestore {
                     && (!('green' in request.resource.data) || request.resource.data.green is bool)
                     && request.resource.data.pinHash is string;
 
-      // Comme pour les équipes : seuls les PINs changent, jamais les étoiles
+      // PINs + bascule "catégorie verte" (bouton admin). Jamais les étoiles
       // (déduites des matchs).
       allow update: if request.resource.data.diff(resource.data).affectedKeys()
-                         .hasOnly(['pinHash', 'pinEnc', 'pin'])
-                    && request.resource.data.stars == resource.data.stars;
+                         .hasOnly(['pinHash', 'pinEnc', 'pin', 'green'])
+                    && request.resource.data.stars == resource.data.stars
+                    && (!('green' in request.resource.data) || request.resource.data.green is bool);
 
       allow delete: if true;
     }
