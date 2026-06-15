@@ -2142,12 +2142,15 @@
     const $ = id => document.getElementById(id);
     const escapeHtml = s => String(s).replace(/[&<>"']/g, c =>
       ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+    // Coercition numérique sûre : empêche l'injection HTML via un champ numérique
+    // qui aurait été écrit en base sous forme de chaîne (ex. "<img onerror=...>").
+    const num = v => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
     const fmtDate = ts => {
       if (!ts) return '';
       const d = ts.toDate ? ts.toDate() : new Date(ts);
       return d.toLocaleDateString('fr-CH', { day:'2-digit', month:'2-digit', year:'numeric' });
     };
-    const randomPin = () => String(Math.floor(1000 + Math.random()*9000));
+    const randomPin = () => String(1000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 9000));
     const teamByName = n => state.teamsLive.find(t => t.name === n) || TEAMS.find(t => t.name === n);
 
     // ─────── LISTENERS FIRESTORE ───────
@@ -2249,18 +2252,18 @@
       // Render lignes — toujours cliquables (profil s'ouvre même en démo)
       body.innerHTML = sorted.map((t, i) => {
         const safeName = escapeHtml(t.name);
-        const onclickAttr = `onclick="openProfile(&quot;${t.name.replace(/"/g, '&quot;')}&quot;)"`;
+        const onclickAttr = `data-name="${safeName}" onclick="openProfile(this.dataset.name)"`;
         return hasLive
           ? `<div class="team-row" ${onclickAttr}>
                <div class="col-rank">${i + 1}</div>
                <div class="col-name">${safeName}</div>
-               <div class="col-cote">${t.cote}</div>
-               <div class="col-points">${t.points}</div>
+               <div class="col-cote">${num(t.cote)}</div>
+               <div class="col-points">${num(t.points)}</div>
              </div>`
           : `<div class="team-row clickable" ${onclickAttr}>
                <div class="col-rank">${i + 1}</div>
                <div class="col-name">${safeName}</div>
-               <div class="col-cote">${t.cote}</div>
+               <div class="col-cote">${num(t.cote)}</div>
              </div>`;
       }).join('');
     }
@@ -2306,7 +2309,7 @@
 
       // Meilleure victoire
       const bestWin = wins.reduce((best, m) => {
-        const pts = m.equipeA === name ? m.pointsA : m.pointsB;
+        const pts = num(m.equipeA === name ? m.pointsA : m.pointsB);
         return (!best || pts > best.pts) ? { match: m, pts } : best;
       }, null);
       const bestWinTxt = bestWin
@@ -2358,9 +2361,9 @@
         <div class="profile-header">
           <div class="profile-name">${escapeHtml(t.name)}</div>
           <div class="profile-rank">${rankTxt}</div>
-          <div class="profile-score">${t.points || 0}</div>
+          <div class="profile-score">${num(t.points)}</div>
           <div class="profile-score-label">Points</div>
-          <div class="profile-cote">Cote de départ : ${t.cote}</div>
+          <div class="profile-cote">Cote de départ : ${num(t.cote)}</div>
         </div>
 
         ${total > 0 ? `
@@ -2438,10 +2441,10 @@
           <div class="match-teams">
             <div class="match-team ${winA ? 'winner' : 'lost'}">
               ${winA ? trophy + ' ' : ''}${escapeHtml(m.equipeA)}
-              <span class="team-pts">+${m.pointsA}</span>
+              <span class="team-pts">+${num(m.pointsA)}</span>
             </div>
             <div class="match-team match-team-b ${winA ? 'lost' : 'winner'}">
-              <span class="team-pts">+${m.pointsB}</span>
+              <span class="team-pts">+${num(m.pointsB)}</span>
               ${escapeHtml(m.equipeB)}${!winA ? ' ' + trophy : ''}
             </div>
           </div>
@@ -3056,7 +3059,7 @@
         <div class="admin-match-row">
           <div class="admin-match-info">
             <div class="a-teams">${escapeHtml(m.equipeA)} vs ${escapeHtml(m.equipeB)} · ${m.vainqueur === 'A' ? '🏆 A' : '🏆 B'}</div>
-            <div class="a-date">${fmtDate(m.date)} · ${escapeHtml(m.equipeA)} +${m.pointsA} / ${escapeHtml(m.equipeB)} +${m.pointsB}${m.editedAt ? ' · ✏️ modifié' : ''}</div>
+            <div class="a-date">${fmtDate(m.date)} · ${escapeHtml(m.equipeA)} +${num(m.pointsA)} / ${escapeHtml(m.equipeB)} +${num(m.pointsB)}${m.editedAt ? ' · ✏️ modifié' : ''}</div>
           </div>
           <div class="admin-match-actions">
             <button class="admin-edit-btn" onclick="openEditMatch('${m.id}')">Modifier</button>
@@ -3428,10 +3431,10 @@
       $('jplayersSub').textContent = `${data.length} joueurs · Tournoi junior 2026`;
 
       body.innerHTML = sorted.map((j, i) => `
-        <div class="team-row clickable" onclick="openJProfile(&quot;${j.name.replace(/"/g,'&quot;')}&quot;)">
+        <div class="team-row clickable" data-name="${escapeHtml(j.name)}" onclick="openJProfile(this.dataset.name)">
           <div class="col-rank">${i + 1}</div>
           <div class="col-name">${escapeHtml(j.name)}${j.green ? '<span class="green-badge" title="Catégorie verte">🟢</span>' : ''}</div>
-          <div class="col-points stars-display">⭐<span class="star-count">${j.stars}</span></div>
+          <div class="col-points stars-display">⭐<span class="star-count">${num(j.stars)}</span></div>
         </div>`).join('');
 
       // En-tête sur 3 colonnes pour les juniors
@@ -3474,7 +3477,7 @@
         <div class="profile-header">
           <div class="profile-name">${escapeHtml(j.name)}${j.green ? '<span class="green-badge" style="width:18px;height:18px;font-size:0.7rem;">🟢</span>' : ''}</div>
           <div class="profile-rank">${rankTxt}</div>
-          <div class="profile-score">⭐${j.stars || 0}</div>
+          <div class="profile-score">⭐${num(j.stars)}</div>
           <div class="profile-score-label">Étoiles</div>
           ${j.green ? '<div class="profile-cote" style="background:#DCFCE7;color:#166534;">🟢 Catégorie verte</div>' : ''}
         </div>
@@ -3537,10 +3540,10 @@
           <div class="match-teams">
             <div class="match-team ${winA ? 'winner' : 'lost'}">
               ${winA ? trophy + ' ' : ''}${escapeHtml(m.joueurA)}
-              <span class="team-pts">+${m.starsA}⭐</span>
+              <span class="team-pts">+${num(m.starsA)}⭐</span>
             </div>
             <div class="match-team match-team-b ${winA ? 'lost' : 'winner'}">
-              <span class="team-pts">+${m.starsB}⭐</span>
+              <span class="team-pts">+${num(m.starsB)}⭐</span>
               ${escapeHtml(m.joueurB)}${!winA ? ' ' + trophy : ''}
             </div>
           </div>
@@ -3956,7 +3959,7 @@
         <div class="admin-match-row">
           <div class="admin-match-info">
             <div class="a-teams">${escapeHtml(m.joueurA)} vs ${escapeHtml(m.joueurB)} · ${m.vainqueur === 'A' ? '🏆 A' : '🏆 B'}${m.greenBalls ? ' · 🟢' : ''}</div>
-            <div class="a-date">${fmtDate(m.date)} · ${escapeHtml(m.joueurA)} +${m.starsA}⭐ / ${escapeHtml(m.joueurB)} +${m.starsB}⭐ · ${escapeHtml(setsTxt)}${m.editedAt ? ' · ✏️ modifié' : ''}</div>
+            <div class="a-date">${fmtDate(m.date)} · ${escapeHtml(m.joueurA)} +${num(m.starsA)}⭐ / ${escapeHtml(m.joueurB)} +${num(m.starsB)}⭐ · ${escapeHtml(setsTxt)}${m.editedAt ? ' · ✏️ modifié' : ''}</div>
           </div>
           <div class="admin-match-actions">
             <button class="admin-edit-btn" onclick="openEditJuniorMatch('${m.id}')">Modifier</button>

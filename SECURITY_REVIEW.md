@@ -3,6 +3,13 @@
 Date : 2026-06-15
 Périmètre : `index.html` (SPA vanilla JS + Firebase Firestore), hébergement GitHub Pages.
 
+> **Mise à jour (posture « petit club » retenue)** — Firebase Auth et Cloud
+> Functions jugés surdimensionnés pour un tournoi amical. Appliqué :
+> correctifs de code (problèmes 6 et 7) directement dans `index.html`, et
+> `firestore.rules` fourni en version **sans authentification** qui sort du
+> mode test sans casser le panneau admin. Reste à faire côté infra :
+> **déployer `firestore.rules`** (essentiel) et, en option, activer App Check.
+
 ---
 
 ## Résumé exécutif
@@ -164,11 +171,12 @@ client. Les `pinHash`/`pinEnc` peuvent être déplacés dans une collection à l
 ### Reco 4 — Activer App Check (reCAPTCHA v3)
 Limite l'accès Firestore aux requêtes issues de votre domaine et freine le brute-force.
 
-### Reco 5 — Durcissements de code (rapides, dans `index.html`)
-- Échapper `pointsA`/`pointsB`/`starsA`/`starsB` au rendu (ou `Number(...)`) → ferme la XSS #6.
-- Remplacer `Math.random()` par `crypto.getRandomValues()` dans `randomPin()`.
-- Retirer les portes dérobées de démo du build de production.
-- Allonger les PINs (6 chiffres) si l'on conserve une validation en ligne limitée en débit.
+### Reco 5 — Durcissements de code (rapides, dans `index.html`) — ✅ APPLIQUÉ
+- ✅ Coercition numérique (`num()`) sur `points`/`pointsA`/`pointsB`/`stars`/`starsA`/`starsB`/`cote` au rendu → ferme la XSS #6.
+- ✅ `randomPin()` utilise désormais `crypto.getRandomValues()`.
+- ✅ `onclick` des profils (équipe/joueur) sécurisés via `data-name` + `dataset` (plus d'interpolation de nom dans du JS inline).
+- ⚪ Portes dérobées de démo (`0000`/`demo000`) laissées : inactives en prod (ne s'activent que si Firebase n'est pas configuré) et utiles pour tester en local.
+- ⚪ Option : allonger les PINs à 6 chiffres si l'on garde une validation en ligne.
 
 ---
 
@@ -179,4 +187,6 @@ Limite l'accès Firestore aux requêtes issues de votre domaine et freine le bru
    l'admin et les suppressions.
 3. **Quand possible** : Cloud Function de saisie (Reco 3) → garantit l'intégrité des résultats.
 
-Voir `firestore.rules` (état cible avec authentification) dans ce dépôt.
+Voir `firestore.rules` dans ce dépôt : version **sans authentification** prête à
+déployer (garde le panneau admin fonctionnel), avec la variante authentifiée
+documentée en commentaire pour le jour où les enjeux augmenteraient.
