@@ -1646,20 +1646,6 @@
             <div id="adminJMatchesList"><!-- Rempli par JS --></div>
           </div>
 
-          <!-- Outil de réparation -->
-          <div class="card">
-            <div class="card-title">Outil de réparation</div>
-            <div style="font-size:0.82rem;color:var(--text-light);margin-bottom:0.9rem;line-height:1.5;">
-              Si les compteurs de points sont incohérents (négatifs, etc.), ce bouton les recalcule depuis zéro
-              en additionnant les <code>pointsA</code> et <code>pointsB</code> de chaque match enregistré.
-              Aucun match n'est supprimé.
-            </div>
-            <button class="btn-calc" onclick="recomputeTeamPoints()" id="recomputeBtn">
-              Recalculer tous les compteurs
-            </button>
-            <div id="recomputeStatus" class="save-status"></div>
-          </div>
-
           <!-- Zone dangereuse — Défi Double (Adulte) -->
           <div class="card danger-card">
             <div class="card-title danger-title">⚠️ Reset Défi Double (Adulte)</div>
@@ -2145,6 +2131,30 @@
     // Coercition numérique sûre : empêche l'injection HTML via un champ numérique
     // qui aurait été écrit en base sous forme de chaîne (ex. "<img onerror=...>").
     const num = v => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+
+    // ─── Points/étoiles DÉRIVÉS de l'historique des matchs ───
+    // Les classements ne sont PLUS lus depuis un compteur stocké (teams.points /
+    // juniors.stars) : ils sont recalculés à chaque affichage en additionnant les
+    // matchs. Conséquence sécurité : il est impossible de s'attribuer des points
+    // sans créer un vrai match (visible dans l'historique, donc traçable et
+    // supprimable par l'admin). Les règles Firestore interdisent toute écriture
+    // directe sur ces compteurs.
+    const teamPointsMap = () => {
+      const m = {};
+      state.matchesLive.forEach(x => {
+        m[x.equipeA] = (m[x.equipeA] || 0) + num(x.pointsA);
+        m[x.equipeB] = (m[x.equipeB] || 0) + num(x.pointsB);
+      });
+      return m;
+    };
+    const juniorStarsMap = () => {
+      const m = {};
+      state.juniorsMatchesLive.forEach(x => {
+        m[x.joueurA] = (m[x.joueurA] || 0) + num(x.starsA);
+        m[x.joueurB] = (m[x.joueurB] || 0) + num(x.starsB);
+      });
+      return m;
+    };
     const fmtDate = ts => {
       if (!ts) return '';
       const d = ts.toDate ? ts.toDate() : new Date(ts);
@@ -2230,9 +2240,11 @@
            <div class="col-name">Équipe</div>
            <div class="col-cote">Cote</div>`;
 
-      // Source : live si dispo sinon TEAMS statique
+      // Source : live si dispo sinon TEAMS statique.
+      // Points déduits des matchs (jamais du compteur stocké).
+      const ptsMap = teamPointsMap();
       const data = hasLive
-        ? state.teamsLive.map(t => ({ name: t.name, cote: t.cote, points: t.points || 0 }))
+        ? state.teamsLive.map(t => ({ name: t.name, cote: t.cote, points: ptsMap[t.name] || 0 }))
         : TEAMS.map(t => ({ name: t.name, cote: t.cote, points: 0 }));
 
       // Tri
@@ -2280,8 +2292,9 @@
       const t = teamByName(name);
       if (!t) { $('profileBody').innerHTML = '<div class="empty-state">Équipe introuvable.</div>'; return; }
 
-      // Rang général
-      const ranked = [...state.teamsLive].sort((a, b) => (b.points||0)-(a.points||0) || b.cote-a.cote);
+      // Rang général (points déduits des matchs)
+      const ptsMap = teamPointsMap();
+      const ranked = [...state.teamsLive].sort((a, b) => ((ptsMap[b.name]||0)-(ptsMap[a.name]||0)) || b.cote-a.cote);
       const rankIdx = ranked.findIndex(x => x.name === name);
       const rankTxt = rankIdx >= 0 ? `${rankIdx + 1}ᵉ / ${ranked.length} équipes` : '—';
 
@@ -2304,7 +2317,7 @@
 
       // Moyenne pts par match
       const avgPts = myMatches.length
-        ? Math.round((t.points || 0) / myMatches.length * 10) / 10
+        ? Math.round((ptsMap[name] || 0) / myMatches.length * 10) / 10
         : 0;
 
       // Meilleure victoire
@@ -2361,7 +2374,7 @@
         <div class="profile-header">
           <div class="profile-name">${escapeHtml(t.name)}</div>
           <div class="profile-rank">${rankTxt}</div>
-          <div class="profile-score">${num(t.points)}</div>
+          <div class="profile-score">${ptsMap[name] || 0}</div>
           <div class="profile-score-label">Points</div>
           <div class="profile-cote">Cote de départ : ${num(t.cote)}</div>
         </div>
@@ -2699,7 +2712,8 @@
         const okB = await verifyPin(tB.name, $('pinB').value);
         if (!okA || !okB) throw new Error('PIN invalide à la sauvegarde');
 
-        // 2) Créer le document match
+        // 2) Créer le document match. Les points NE sont PAS écrits sur les
+        //    équipes : le classement les déduit de l'historique (voir teamPointsMap).
         await db.collection('matches').add({
           equipeA:   tA.name,
           equipeB:   tB.name,
@@ -2708,14 +2722,6 @@
           pointsA:   calc.deltaA,
           pointsB:   calc.deltaB,
           date:      firebase.firestore.FieldValue.serverTimestamp()
-        });
-
-        // 3) Incrémenter les compteurs de points
-        await db.collection('teams').doc(tA.id).update({
-          points: firebase.firestore.FieldValue.increment(calc.deltaA)
-        });
-        await db.collection('teams').doc(tB.id).update({
-          points: firebase.firestore.FieldValue.increment(calc.deltaB)
         });
 
         status.className = 'save-status ok';
@@ -3112,7 +3118,7 @@
         </div>
 
         <div style="font-size:0.78rem;color:var(--text-light);padding:0.7rem 0.85rem;background:var(--primary-light);border-radius:var(--radius);margin-top:0.8rem;line-height:1.5;">
-          ℹ️ En sauvegardant, les points seront recalculés automatiquement et les compteurs des deux équipes mis à jour.
+          ℹ️ En sauvegardant, les points du match sont recalculés et le classement se met à jour automatiquement.
         </div>
 
         <div class="modal-actions">
@@ -3167,10 +3173,7 @@
           const threeSet = !!s3;
           const calc = computePoints(tA.cote, tB.cote, newWinner, threeSet);
 
-          // Différentiel : ce qu'il faut AJOUTER au compteur (peut être positif ou négatif)
-          const diffA = calc.deltaA - (oldData.pointsA || 0);
-          const diffB = calc.deltaB - (oldData.pointsB || 0);
-
+          // On ne touche qu'au match : le classement se recalcule tout seul.
           tx.update(matchRef, {
             vainqueur: newWinner,
             scores:    { set1: s1, set2: s2, ...(s3 ? { set3: s3 } : {}) },
@@ -3178,16 +3181,10 @@
             pointsB:   calc.deltaB,
             editedAt:  firebase.firestore.FieldValue.serverTimestamp()
           });
-          tx.update(db.collection('teams').doc(tA.id), {
-            points: firebase.firestore.FieldValue.increment(diffA)
-          });
-          tx.update(db.collection('teams').doc(tB.id), {
-            points: firebase.firestore.FieldValue.increment(diffB)
-          });
         });
 
         status.className = 'save-status ok';
-        status.textContent = '✓ Match modifié, compteurs ajustés';
+        status.textContent = '✓ Match modifié, classement mis à jour';
         setTimeout(() => closeEditModal(), 1500);
       } catch (e) {
         console.error(e);
@@ -3218,13 +3215,9 @@
         matchesSnap.docs.forEach(d => batch1.delete(d.ref));
         if (matchesSnap.size > 0) await batch1.commit();
 
-        const teamsSnap = await db.collection('teams').get();
-        const batch2 = db.batch();
-        teamsSnap.docs.forEach(d => batch2.update(d.ref, { points: 0 }));
-        if (teamsSnap.size > 0) await batch2.commit();
-
+        // Le classement étant déduit des matchs, les supprimer remet tout à 0.
         status.className = 'save-status ok';
-        status.innerHTML = `✓ Défi Double remis à zéro · ${matchesSnap.size} matchs supprimés · ${teamsSnap.size} équipes à 0 pts`;
+        status.innerHTML = `✓ Défi Double remis à zéro · ${matchesSnap.size} matchs supprimés`;
       } catch (e) {
         console.error(e);
         status.className = 'save-status error';
@@ -3254,13 +3247,9 @@
         matchesSnap.docs.forEach(d => batch1.delete(d.ref));
         if (matchesSnap.size > 0) await batch1.commit();
 
-        const juniorsSnap = await db.collection('juniors').get();
-        const batch2 = db.batch();
-        juniorsSnap.docs.forEach(d => batch2.update(d.ref, { stars: 0 }));
-        if (juniorsSnap.size > 0) await batch2.commit();
-
+        // Le classement étant déduit des matchs, les supprimer remet tout à 0.
         status.className = 'save-status ok';
-        status.innerHTML = `✓ Défi Junior remis à zéro · ${matchesSnap.size} matchs supprimés · ${juniorsSnap.size} joueurs à 0 ⭐`;
+        status.innerHTML = `✓ Défi Junior remis à zéro · ${matchesSnap.size} matchs supprimés`;
       } catch (e) {
         console.error(e);
         status.className = 'save-status error';
@@ -3273,25 +3262,10 @@
     async function deleteMatch(id) {
       const m = state.matchesLive.find(x => x.id === id);
       if (!m) return;
-      if (!confirm(`Supprimer le match ${m.equipeA} vs ${m.equipeB} ?\nLes points seront soustraits des compteurs.`)) return;
+      if (!confirm(`Supprimer le match ${m.equipeA} vs ${m.equipeB} ?\nLe classement sera mis à jour.`)) return;
       try {
-        // Transaction atomique pour éviter les soustractions doubles
-        await db.runTransaction(async (tx) => {
-          const matchRef = db.collection('matches').doc(id);
-          const matchSnap = await tx.get(matchRef);
-          if (!matchSnap.exists) return; // déjà supprimé
-          const data = matchSnap.data();
-
-          const tA = state.teamsLive.find(t => t.name === data.equipeA);
-          const tB = state.teamsLive.find(t => t.name === data.equipeB);
-          if (tA) tx.update(db.collection('teams').doc(tA.id), {
-            points: firebase.firestore.FieldValue.increment(-(data.pointsA || 0))
-          });
-          if (tB) tx.update(db.collection('teams').doc(tB.id), {
-            points: firebase.firestore.FieldValue.increment(-(data.pointsB || 0))
-          });
-          tx.delete(matchRef);
-        });
+        // Le classement étant déduit des matchs, supprimer le match suffit.
+        await db.collection('matches').doc(id).delete();
       } catch (e) { alert('Erreur : ' + e.message); }
     }
 
@@ -3352,44 +3326,9 @@
       }
     }
 
-    // ─── Recalcul des compteurs depuis l'historique (outil de réparation) ───
-    async function recomputeTeamPoints() {
-      if (!firebaseReady) { alert('Firebase non configuré.'); return; }
-      if (!confirm('Recalculer tous les compteurs depuis l\'historique des matchs ?\n\nLes points de chaque équipe seront remis à 0, puis recalculés en additionnant les points de chaque match enregistré. Aucun match ne sera supprimé.')) return;
-
-      const status = $('recomputeStatus');
-      const btn = $('recomputeBtn');
-      btn.disabled = true;
-      status.className = 'save-status';
-      status.textContent = 'Calcul en cours…';
-
-      try {
-        // Calcul des totaux par équipe à partir des matchs
-        const totals = {};
-        state.teamsLive.forEach(t => { totals[t.name] = 0; });
-        state.matchesLive.forEach(m => {
-          if (totals[m.equipeA] !== undefined) totals[m.equipeA] += (m.pointsA || 0);
-          if (totals[m.equipeB] !== undefined) totals[m.equipeB] += (m.pointsB || 0);
-        });
-
-        // Mise à jour batch de toutes les équipes
-        const batch = db.batch();
-        state.teamsLive.forEach(t => {
-          batch.update(db.collection('teams').doc(t.id), { points: totals[t.name] || 0 });
-        });
-        await batch.commit();
-
-        const totalPts = Object.values(totals).reduce((a, b) => a + b, 0);
-        status.className = 'save-status ok';
-        status.textContent = `✓ ${state.teamsLive.length} compteurs recalculés (${state.matchesLive.length} matchs · ${totalPts} pts au total)`;
-      } catch (e) {
-        console.error(e);
-        status.className = 'save-status error';
-        status.textContent = 'Erreur : ' + e.message;
-      } finally {
-        btn.disabled = false;
-      }
-    }
+    // Note : l'ancien outil « recalcul des compteurs » a été supprimé.
+    // Les points (et étoiles) sont désormais déduits en direct de l'historique
+    // des matchs (voir teamPointsMap / juniorStarsMap), donc toujours cohérents.
 
     /* ============================================================
        ╔═══════════════════════════════════════════════════════╗
@@ -3413,8 +3352,10 @@
       if (!body) return;
 
       const hasLive = state.juniorsLive.length > 0;
+      // Étoiles déduites des matchs (jamais du compteur stocké).
+      const starsMap = juniorStarsMap();
       const data = hasLive
-        ? state.juniorsLive.map(j => ({ name: j.name, green: j.green, stars: j.stars || 0 }))
+        ? state.juniorsLive.map(j => ({ name: j.name, green: j.green, stars: starsMap[j.name] || 0 }))
         : JUNIORS.map(j => ({ name: j.name, green: j.green, stars: 0 }));
 
       const sorted = [...data].sort((a, b) => {
@@ -3435,6 +3376,7 @@
           <div class="col-rank">${i + 1}</div>
           <div class="col-name">${escapeHtml(j.name)}${j.green ? '<span class="green-badge" title="Catégorie verte">🟢</span>' : ''}</div>
           <div class="col-points stars-display">⭐<span class="star-count">${num(j.stars)}</span></div>
+          <!-- j.stars provient déjà de starsMap (calculé ci-dessus) -->
         </div>`).join('');
 
       // En-tête sur 3 colonnes pour les juniors
@@ -3454,9 +3396,11 @@
       const j = state.juniorsLive.find(x => x.name === name) || JUNIORS.find(x => x.name === name);
       if (!j) { $('jprofileBody').innerHTML = '<div class="empty-state">Joueur introuvable.</div>'; return; }
 
-      // Même tri que la liste "Joueurs" (étoiles desc, puis ordre JUNIORS, puis alpha)
+      // Même tri que la liste "Joueurs" (étoiles desc, puis ordre JUNIORS, puis alpha).
+      // Étoiles déduites des matchs.
+      const starsMap = juniorStarsMap();
       const ranked = [...state.juniorsLive].sort((a, b) => {
-        if ((b.stars || 0) !== (a.stars || 0)) return (b.stars || 0) - (a.stars || 0);
+        if ((starsMap[b.name] || 0) !== (starsMap[a.name] || 0)) return (starsMap[b.name] || 0) - (starsMap[a.name] || 0);
         const aIdx = JUNIORS.findIndex(j => j.name === a.name);
         const bIdx = JUNIORS.findIndex(j => j.name === b.name);
         if (aIdx >= 0 && bIdx >= 0) return aIdx - bIdx;
@@ -3477,7 +3421,7 @@
         <div class="profile-header">
           <div class="profile-name">${escapeHtml(j.name)}${j.green ? '<span class="green-badge" style="width:18px;height:18px;font-size:0.7rem;">🟢</span>' : ''}</div>
           <div class="profile-rank">${rankTxt}</div>
-          <div class="profile-score">⭐${num(j.stars)}</div>
+          <div class="profile-score">⭐${starsMap[name] || 0}</div>
           <div class="profile-score-label">Étoiles</div>
           ${j.green ? '<div class="profile-cote" style="background:#DCFCE7;color:#166534;">🟢 Catégorie verte</div>' : ''}
         </div>
@@ -3761,6 +3705,7 @@
         const okB = await verifyJPin(jB.name, $('jpinB').value);
         if (!okA || !okB) throw new Error('PIN invalide');
 
+        // Le classement déduit les étoiles de l'historique : on n'écrit que le match.
         await db.collection('juniors_matches').add({
           joueurA: jA.name, joueurB: jB.name,
           vainqueur: winner,
@@ -3768,8 +3713,6 @@
           starsA, starsB, greenBalls,
           date: firebase.firestore.FieldValue.serverTimestamp()
         });
-        await db.collection('juniors').doc(jA.id).update({ stars: firebase.firestore.FieldValue.increment(starsA) });
-        await db.collection('juniors').doc(jB.id).update({ stars: firebase.firestore.FieldValue.increment(starsB) });
 
         status.className = 'save-status ok';
         status.innerHTML = `✓ Match enregistré · ${escapeHtml(jA.name)} +${starsA}⭐ · ${escapeHtml(jB.name)} +${starsB}⭐`;
@@ -4019,7 +3962,7 @@
         </div>
 
         <div style="font-size:0.78rem;color:var(--text-light);padding:0.7rem 0.85rem;background:var(--primary-light);border-radius:var(--radius);margin-top:0.8rem;line-height:1.5;">
-          ℹ️ En sauvegardant, les étoiles seront recalculées (vainqueur +2⭐, perdant +1⭐) et les compteurs des deux joueurs mis à jour automatiquement.
+          ℹ️ En sauvegardant, les étoiles du match sont recalculées (vainqueur +2⭐, perdant +1⭐) et le classement se met à jour automatiquement.
         </div>
 
         <div class="modal-actions">
@@ -4061,8 +4004,6 @@
 
           const newStarsA = newWinner === 'A' ? 2 : 1;
           const newStarsB = newWinner === 'B' ? 2 : 1;
-          const diffA = newStarsA - (oldData.starsA || 0);
-          const diffB = newStarsB - (oldData.starsB || 0);
 
           const updateData = {
             vainqueur: newWinner,
@@ -4076,17 +4017,12 @@
             updateData.score = firebase.firestore.FieldValue.delete();
           }
 
+          // On ne touche qu'au match : le classement se recalcule tout seul.
           tx.update(matchRef, updateData);
-          tx.update(db.collection('juniors').doc(jA.id), {
-            stars: firebase.firestore.FieldValue.increment(diffA)
-          });
-          tx.update(db.collection('juniors').doc(jB.id), {
-            stars: firebase.firestore.FieldValue.increment(diffB)
-          });
         });
 
         status.className = 'save-status ok';
-        status.textContent = '✓ Match modifié, étoiles ajustées';
+        status.textContent = '✓ Match modifié, classement mis à jour';
         setTimeout(() => closeEditModal(), 1500);
       } catch (e) {
         console.error(e);
@@ -4100,19 +4036,10 @@
     async function deleteJuniorMatch(id) {
       const m = state.juniorsMatchesLive.find(x => x.id === id);
       if (!m) return;
-      if (!confirm(`Supprimer ce match ?\nLes étoiles seront soustraites.`)) return;
+      if (!confirm(`Supprimer ce match ?\nLe classement sera mis à jour.`)) return;
       try {
-        await db.runTransaction(async (tx) => {
-          const matchRef = db.collection('juniors_matches').doc(id);
-          const snap = await tx.get(matchRef);
-          if (!snap.exists) return;
-          const data = snap.data();
-          const jA = state.juniorsLive.find(j => j.name === data.joueurA);
-          const jB = state.juniorsLive.find(j => j.name === data.joueurB);
-          if (jA) tx.update(db.collection('juniors').doc(jA.id), { stars: firebase.firestore.FieldValue.increment(-(data.starsA || 0)) });
-          if (jB) tx.update(db.collection('juniors').doc(jB.id), { stars: firebase.firestore.FieldValue.increment(-(data.starsB || 0)) });
-          tx.delete(matchRef);
-        });
+        // Le classement étant déduit des matchs, supprimer le match suffit.
+        await db.collection('juniors_matches').doc(id).delete();
       } catch (e) { alert('Erreur : ' + e.message); }
     }
 

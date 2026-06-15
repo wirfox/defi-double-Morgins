@@ -5,10 +5,25 @@ Périmètre : `index.html` (SPA vanilla JS + Firebase Firestore), hébergement G
 
 > **Mise à jour (posture « petit club » retenue)** — Firebase Auth et Cloud
 > Functions jugés surdimensionnés pour un tournoi amical. Appliqué :
-> correctifs de code (problèmes 6 et 7) directement dans `index.html`, et
-> `firestore.rules` fourni en version **sans authentification** qui sort du
-> mode test sans casser le panneau admin. Reste à faire côté infra :
+> correctifs de code (problèmes 6 et 7) + **points/étoiles désormais déduits
+> de l'historique des matchs** (voir « Anti-triche » ci-dessous), et
+> `firestore.rules` en version **sans authentification** qui sort du mode test
+> sans casser le panneau admin. Reste à faire côté infra :
 > **déployer `firestore.rules`** (essentiel) et, en option, activer App Check.
+>
+> ### Anti-triche : points non falsifiables (problème 2, atténué)
+> Avant, `teams.points` / `juniors.stars` étaient des compteurs stockés et
+> modifiables : n'importe qui pouvait, depuis la console du navigateur, écrire
+> `points: 9999` **en silence**. Désormais ces champs ne sont plus jamais
+> écrits par l'app ; le classement est recalculé à l'affichage en additionnant
+> les matchs (`teamPointsMap` / `juniorStarsMap`), et `firestore.rules`
+> **interdit toute écriture sur `points`/`stars`**. Conséquence : pour gagner
+> des points, il faut créer un **vrai match**, qui apparaît dans l'historique
+> (deux noms d'équipe + score + date) — donc visible de tous et supprimable par
+> l'admin. La triche silencieuse devient impossible ; il ne reste que la triche
+> *visible et traçable*, ce qui est acceptable pour un tournoi amical. Pour
+> l'éliminer totalement, il faudrait valider les PINs côté serveur (Auth + Cloud
+> Function) — non retenu ici.
 
 ---
 
