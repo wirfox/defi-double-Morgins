@@ -1,0 +1,195 @@
+rules_version = '2';
+
+// ============================================================================
+// Règles de sécurité Firestore — Défi Double TC Morgins
+//
+// IMPORTANT : ce fichier propose deux niveaux. Choisissez-en UN seul à déployer.
+//
+//  - OPTION A (INTÉRIMAIRE)  : compatible avec l'app ACTUELLE (sans authentification).
+//                              Durcit la forme des écritures mais NE PEUT PAS empêcher
+//                              la falsification des points ni les suppressions, car
+//                              l'app écrit elle-même de façon anonyme.
+//
+//  - OPTION B (CIBLE)        : nécessite d'ajouter Firebase Auth (anonyme pour les
+//                              visiteurs + compte admin avec custom claim `admin:true`).
+//                              C'est la seule option qui protège réellement les
+//                              opérations sensibles. Voir SECURITY_REVIEW.md.
+//
+// Déployer :  firebase deploy --only firestore:rules
+// ============================================================================
+
+
+// ─────────────────────────────────────────────────────────────────────────
+// OPTION A — INTÉRIMAIRE (app actuelle, sans auth). Décommentez ce bloc.
+// ─────────────────────────────────────────────────────────────────────────
+/*
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isScore(s) {
+      return s is string && s.size() <= 10 && s.matches('^[0-9]{1,2}-[0-9]{1,2}$');
+    }
+    function validScores(sc) {
+      return sc is map
+        && isScore(sc.set1) && isScore(sc.set2)
+        && (!('set3' in sc) || isScore(sc.set3));
+    }
+
+    // Lecture publique (classements). Le pinHash reste hélas lisible ici :
+    // c'est une limite de l'OPTION A, levée par l'OPTION B + Cloud Function.
+    match /teams/{id} {
+      allow read: if true;
+      // create/delete réservés à l'admin → à faire via la console Firebase.
+      allow create, delete: if false;
+      // L'app n'a besoin que de modifier points / pinHash / pinEnc.
+      allow update: if request.resource.data.diff(resource.data)
+                       .affectedKeys()
+                       .hasOnly(['points', 'pinHash', 'pinEnc'])
+                    && request.resource.data.points is number
+                    && request.resource.data.points >= 0
+                    && request.resource.data.points <= 100000;
+    }
+
+    match /matches/{id} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasOnly(
+                         ['equipeA','equipeB','vainqueur','scores','pointsA','pointsB','date'])
+                    && request.resource.data.equipeA is string && request.resource.data.equipeA.size() <= 80
+                    && request.resource.data.equipeB is string && request.resource.data.equipeB.size() <= 80
+                    && request.resource.data.vainqueur in ['A','B']
+                    && validScores(request.resource.data.scores)
+                    && request.resource.data.pointsA is number && request.resource.data.pointsA >= 0 && request.resource.data.pointsA <= 100
+                    && request.resource.data.pointsB is number && request.resource.data.pointsB >= 0 && request.resource.data.pointsB <= 100
+                    && request.resource.data.date == request.time;
+      // édition / suppression de match = admin → console Firebase.
+      allow update, delete: if false;
+    }
+
+    match /juniors/{id} {
+      allow read: if true;
+      allow create, delete: if false;
+      allow update: if request.resource.data.diff(resource.data)
+                       .affectedKeys()
+                       .hasOnly(['stars', 'pinHash', 'pinEnc'])
+                    && request.resource.data.stars is number
+                    && request.resource.data.stars >= 0
+                    && request.resource.data.stars <= 100000;
+    }
+
+    match /juniors_matches/{id} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasOnly(
+                         ['joueurA','joueurB','vainqueur','scores','starsA','starsB','greenBalls','date'])
+                    && request.resource.data.joueurA is string && request.resource.data.joueurA.size() <= 80
+                    && request.resource.data.joueurB is string && request.resource.data.joueurB.size() <= 80
+                    && request.resource.data.vainqueur in ['A','B']
+                    && validScores(request.resource.data.scores)
+                    && request.resource.data.starsA is number && request.resource.data.starsA >= 0 && request.resource.data.starsA <= 10
+                    && request.resource.data.starsB is number && request.resource.data.starsB >= 0 && request.resource.data.starsB <= 10
+                    && request.resource.data.greenBalls is bool
+                    && request.resource.data.date == request.time;
+      allow update, delete: if false;
+    }
+
+    // config/admin : le client actuel doit le LIRE pour vérifier le code admin.
+    // C'est précisément la faiblesse à supprimer en passant à l'OPTION B.
+    match /config/{id} {
+      allow read: if true;
+      allow write: if false; // l'init/modif du code admin se fait via la console.
+    }
+
+    match /{document=**} { allow read, write: if false; }
+  }
+}
+*/
+
+
+// ─────────────────────────────────────────────────────────────────────────
+// OPTION B — CIBLE (recommandée). Nécessite Firebase Auth :
+//   - Auth anonyme activée  → tout visiteur obtient request.auth != null
+//   - Compte admin avec custom claim  admin:true  (défini via Admin SDK / Cloud Function)
+// Idéalement combinée à une Cloud Function `submitMatch` validant les PINs
+// côté serveur (voir SECURITY_REVIEW.md, reco 3) ; dans ce cas, passez
+// create de `matches`/`juniors_matches` et update points/stars à `if false`
+// (seul le service Admin écrit).
+// ─────────────────────────────────────────────────────────────────────────
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAdmin() {
+      return request.auth != null && request.auth.token.admin == true;
+    }
+    function signedIn() {
+      return request.auth != null;
+    }
+    function isScore(s) {
+      return s is string && s.size() <= 10 && s.matches('^[0-9]{1,2}-[0-9]{1,2}$');
+    }
+    function validScores(sc) {
+      return sc is map
+        && isScore(sc.set1) && isScore(sc.set2)
+        && (!('set3' in sc) || isScore(sc.set3));
+    }
+
+    match /teams/{id} {
+      allow read: if true;                 // classements publics
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin()
+                    || ( signedIn()
+                         && request.resource.data.diff(resource.data)
+                              .affectedKeys().hasOnly(['points'])
+                         && request.resource.data.points is number
+                         && request.resource.data.points >= 0
+                         && request.resource.data.points <= 100000 );
+    }
+
+    match /matches/{id} {
+      allow read: if true;
+      allow create: if signedIn()
+                    && request.resource.data.keys().hasOnly(
+                         ['equipeA','equipeB','vainqueur','scores','pointsA','pointsB','date'])
+                    && request.resource.data.vainqueur in ['A','B']
+                    && validScores(request.resource.data.scores)
+                    && request.resource.data.pointsA is number && request.resource.data.pointsA >= 0 && request.resource.data.pointsA <= 100
+                    && request.resource.data.pointsB is number && request.resource.data.pointsB >= 0 && request.resource.data.pointsB <= 100
+                    && request.resource.data.date == request.time;
+      allow update, delete: if isAdmin();
+    }
+
+    match /juniors/{id} {
+      allow read: if true;
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin()
+                    || ( signedIn()
+                         && request.resource.data.diff(resource.data)
+                              .affectedKeys().hasOnly(['stars'])
+                         && request.resource.data.stars is number
+                         && request.resource.data.stars >= 0
+                         && request.resource.data.stars <= 100000 );
+    }
+
+    match /juniors_matches/{id} {
+      allow read: if true;
+      allow create: if signedIn()
+                    && request.resource.data.keys().hasOnly(
+                         ['joueurA','joueurB','vainqueur','scores','starsA','starsB','greenBalls','date'])
+                    && request.resource.data.vainqueur in ['A','B']
+                    && validScores(request.resource.data.scores)
+                    && request.resource.data.starsA is number && request.resource.data.starsA >= 0 && request.resource.data.starsA <= 10
+                    && request.resource.data.starsB is number && request.resource.data.starsB >= 0 && request.resource.data.starsB <= 10
+                    && request.resource.data.greenBalls is bool
+                    && request.resource.data.date == request.time;
+      allow update, delete: if isAdmin();
+    }
+
+    // Secrets : plus jamais lisibles par le client. La vérification admin passe
+    // par Firebase Auth (custom claim), pas par la lecture d'un hash.
+    match /config/{id} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // Tout le reste est refusé par défaut.
+    match /{document=**} { allow read, write: if false; }
+  }
+}
