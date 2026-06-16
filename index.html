@@ -2579,8 +2579,8 @@
       if (!state.result.teamA) { $('pinErrorA').textContent = "Sélectionne d'abord l'équipe."; return; }
       $('pinStatusA').className = 'pin-status loading';
       $('pinStatusA').innerHTML = '…';
-      const ok = await verifyPin(state.result.teamA, pin);
-      if (ok) {
+      const st = await verifyPin(state.result.teamA, pin);
+      if (st === 'ok') {
         state.result.pinAok = true;
         $('pinStatusA').className = 'pin-status ok';
         $('pinStatusA').innerHTML = '✓';
@@ -2589,7 +2589,9 @@
         state.result.pinAok = false;
         $('pinStatusA').className = 'pin-status error';
         $('pinStatusA').innerHTML = '✕';
-        $('pinErrorA').textContent = 'Code PIN incorrect.';
+        $('pinErrorA').textContent = st === 'unreachable'
+          ? 'Serveur momentanément indisponible. Réessaie dans un instant.'
+          : 'Code PIN incorrect.';
         $('step-2').classList.add('hidden');
       }
       updateStepIndicator();
@@ -2617,8 +2619,8 @@
       if (!state.result.teamB) { $('pinErrorB').textContent = "Sélectionne d'abord l'équipe."; return; }
       $('pinStatusB').className = 'pin-status loading';
       $('pinStatusB').innerHTML = '…';
-      const ok = await verifyPin(state.result.teamB, pin);
-      if (ok) {
+      const st = await verifyPin(state.result.teamB, pin);
+      if (st === 'ok') {
         state.result.pinBok = true;
         $('pinStatusB').className = 'pin-status ok';
         $('pinStatusB').innerHTML = '✓';
@@ -2629,26 +2631,36 @@
         state.result.pinBok = false;
         $('pinStatusB').className = 'pin-status error';
         $('pinStatusB').innerHTML = '✕';
-        $('pinErrorB').textContent = 'Code PIN incorrect.';
+        $('pinErrorB').textContent = st === 'unreachable'
+          ? 'Serveur momentanément indisponible. Réessaie dans un instant.'
+          : 'Code PIN incorrect.';
         $('step-3').classList.add('hidden');
       }
       updateStepIndicator();
     }
 
-    async function verifyPin(teamName, pin) {
-      if (!firebaseReady) {
-        // Mode démo sans Firebase
-        return pin === '0000';
-      }
-      // Vérification CÔTÉ SERVEUR (Pi) : le navigateur ne voit jamais le hash,
-      // donc le PIN n'est pas crackable hors ligne.
+    // Vérifie un PIN via le serveur (Pi). Renvoie 'ok' (correct), 'wrong'
+    // (incorrect) ou 'unreachable' (serveur injoignable) — pour distinguer
+    // "PIN faux" d'un "serveur momentanément indisponible".
+    async function checkPinStatus(scope, name, pin) {
+      if (!PI_URL) return 'unreachable';
+      let res;
       try {
-        const r = await piPost('/verify-pin', { scope: 'team', name: teamName, pin: String(pin) });
-        return !!r.ok;
-      } catch (e) {
-        console.error('verifyPin:', e);
-        return false;
-      }
+        res = await fetch(PI_URL + '/verify-pin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scope, name, pin: String(pin) })
+        });
+      } catch (e) { return 'unreachable'; }
+      if (!res.ok) return 'unreachable';
+      let data = {};
+      try { data = await res.json(); } catch (e) { return 'unreachable'; }
+      return data.ok ? 'ok' : 'wrong';
+    }
+
+    async function verifyPin(teamName, pin) {
+      if (!firebaseReady) return pin === '0000' ? 'ok' : 'wrong'; // mode démo
+      return checkPinStatus('team', teamName, pin);
     }
 
     function toggleSet3() {
@@ -3590,15 +3602,17 @@
       if (pin.length !== 4) { state.jResult.pinAok = false; $('jstep-2').classList.add('hidden'); updateJStepIndicator(); return; }
       if (!state.jResult.joueurA) { $('jpinErrorA').textContent = "Sélectionne d'abord ton nom."; return; }
       $('jpinStatusA').className = 'pin-status loading'; $('jpinStatusA').innerHTML = '…';
-      const ok = await verifyJPin(state.jResult.joueurA, pin);
-      if (ok) {
+      const st = await verifyJPin(state.jResult.joueurA, pin);
+      if (st === 'ok') {
         state.jResult.pinAok = true;
         $('jpinStatusA').className = 'pin-status ok'; $('jpinStatusA').innerHTML = '✓';
         $('jstep-2').classList.remove('hidden');
       } else {
         state.jResult.pinAok = false;
         $('jpinStatusA').className = 'pin-status error'; $('jpinStatusA').innerHTML = '✕';
-        $('jpinErrorA').textContent = 'Code PIN incorrect.';
+        $('jpinErrorA').textContent = st === 'unreachable'
+          ? 'Serveur momentanément indisponible. Réessaie dans un instant.'
+          : 'Code PIN incorrect.';
         $('jstep-2').classList.add('hidden');
       }
       updateJStepIndicator();
@@ -3624,8 +3638,8 @@
       if (pin.length !== 4) { state.jResult.pinBok = false; $('jstep-3').classList.add('hidden'); updateJStepIndicator(); return; }
       if (!state.jResult.joueurB) { $('jpinErrorB').textContent = "Sélectionne d'abord l'adversaire."; return; }
       $('jpinStatusB').className = 'pin-status loading'; $('jpinStatusB').innerHTML = '…';
-      const ok = await verifyJPin(state.jResult.joueurB, pin);
-      if (ok) {
+      const st = await verifyJPin(state.jResult.joueurB, pin);
+      if (st === 'ok') {
         state.jResult.pinBok = true;
         $('jpinStatusB').className = 'pin-status ok'; $('jpinStatusB').innerHTML = '✓';
         $('jstep-3').classList.remove('hidden');
@@ -3639,19 +3653,17 @@
       } else {
         state.jResult.pinBok = false;
         $('jpinStatusB').className = 'pin-status error'; $('jpinStatusB').innerHTML = '✕';
-        $('jpinErrorB').textContent = 'Code PIN incorrect.';
+        $('jpinErrorB').textContent = st === 'unreachable'
+          ? 'Serveur momentanément indisponible. Réessaie dans un instant.'
+          : 'Code PIN incorrect.';
         $('jstep-3').classList.add('hidden');
       }
       updateJStepIndicator();
     }
 
     async function verifyJPin(joueurName, pin) {
-      if (!firebaseReady) return pin === '0000';
-      // Vérification côté serveur (Pi) — voir verifyPin.
-      try {
-        const r = await piPost('/verify-pin', { scope: 'junior', name: joueurName, pin: String(pin) });
-        return !!r.ok;
-      } catch (e) { console.error('verifyJPin:', e); return false; }
+      if (!firebaseReady) return pin === '0000' ? 'ok' : 'wrong'; // mode démo
+      return checkPinStatus('junior', joueurName, pin);
     }
 
     function renderJResultPreview() {
