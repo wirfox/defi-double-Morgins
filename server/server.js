@@ -18,6 +18,7 @@
 const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
+const http = require('http');
 const admin = require('firebase-admin');
 
 // --- Configuration ---------------------------------------------------------
@@ -246,6 +247,91 @@ app.post('/admin/migrate', async (req, res) => {
     return res.status(500).json({ ok: false, error: 'Erreur serveur' });
   }
 });
+
+// Édition d'un match ADULTE (admin) : le serveur recalcule les points.
+app.post('/admin/edit-match', async (req, res) => {
+  try {
+    const { adminCode, matchId, winner, scores } = req.body || {};
+    if (!(await adminCodeIsValid(adminCode))) return res.status(403).json({ ok: false, error: 'Code admin invalide' });
+    if (winner !== 'A' && winner !== 'B') return res.status(400).json({ ok: false, error: 'Vainqueur invalide' });
+    const sc = cleanScores(scores);
+    if (!sc) return res.status(400).json({ ok: false, error: 'Scores invalides' });
+    const ref = db.collection('matches').doc(String(matchId));
+    const snap = await ref.get();
+    if (!snap.exists) return res.status(400).json({ ok: false, error: 'Match introuvable' });
+    const old = snap.data();
+    const tA = await findByName('teams', old.equipeA);
+    const tB = await findByName('teams', old.equipeB);
+    if (!tA || !tB) return res.status(400).json({ ok: false, error: 'Équipes introuvables' });
+    const { deltaA, deltaB } = computePoints(Number(tA.cote), Number(tB.cote), winner, !!sc.set3);
+    await ref.update({ vainqueur: winner, scores: sc, pointsA: deltaA, pointsB: deltaB, editedAt: FieldValue.serverTimestamp() });
+    return res.json({ ok: true, pointsA: deltaA, pointsB: deltaB });
+  } catch (e) {
+    console.error('edit-match:', e);
+    return res.status(500).json({ ok: false, error: 'Erreur serveur' });
+  }
+});
+
+// Édition d'un match JUNIOR (admin).
+app.post('/admin/edit-jmatch', async (req, res) => {
+  try {
+    const { adminCode, matchId, winner, scores } = req.body || {};
+    if (!(await adminCodeIsValid(adminCode))) return res.status(403).json({ ok: false, error: 'Code admin invalide' });
+    if (winner !== 'A' && winner !== 'B') return res.status(400).json({ ok: false, error: 'Vainqueur invalide' });
+    const sc = cleanScores(scores);
+    if (!sc) return res.status(400).json({ ok: false, error: 'Scores invalides' });
+    const ref = db.collection('juniors_matches').doc(String(matchId));
+    const snap = await ref.get();
+    if (!snap.exists) return res.status(400).json({ ok: false, error: 'Match introuvable' });
+    const starsA = winner === 'A' ? 2 : 1;
+    const starsB = winner === 'B' ? 2 : 1;
+    const update = { vainqueur: winner, scores: sc, starsA, starsB, editedAt: FieldValue.serverTimestamp() };
+    if (snap.data().score !== undefined) update.score = FieldValue.delete();
+    await ref.update(update);
+    return res.json({ ok: true, starsA, starsB });
+  } catch (e) {
+    console.error('edit-jmatch:', e);
+    return res.status(500).json({ ok: false, error: 'Erreur serveur' });
+  }
+});
+
+// ----- Publication automatique de l'URL du tunnel dans Firestore -----------
+// Le tunnel gratuit Cloudflare change d'URL à chaque redémarrage. Le serveur
+// interroge les métriques de cloudflared pour connaître l'URL publique
+// courante, et l'écrit dans config/server.url → l'app la lit toute seule.
+// (Si ça échoue, on peut toujours définir config/server.url à la main dans la
+//  console Firebase.)
+const CF_METRICS = process.env.CF_METRICS || '127.0.0.1:20241';
+let lastPublishedUrl = null;
+function fetchQuickTunnelHostname() {
+  return new Promise((resolve) => {
+    const req = http.get(`http://${CF_METRICS}/quicktunnel`, (r) => {
+      let body = '';
+      r.on('data', (c) => (body += c));
+      r.on('end', () => { try { resolve(JSON.parse(body).hostname || null); } catch (e) { resolve(null); } });
+    });
+    req.on('error', () => resolve(null));
+    req.setTimeout(3000, () => { req.destroy(); resolve(null); });
+  });
+}
+async function publishTunnelUrl() {
+  const host = await fetchQuickTunnelHostname();
+  if (!host) return;
+  const url = 'https://' + host;
+  if (url === lastPublishedUrl) return;
+  try {
+    await db.collection('config').doc('server').set(
+      { url, updatedAt: FieldValue.serverTimestamp() },
+      { merge: true }
+    );
+    lastPublishedUrl = url;
+    console.log('URL du tunnel publiée dans Firestore :', url);
+  } catch (e) {
+    console.error('publishTunnelUrl:', e.message);
+  }
+}
+setTimeout(publishTunnelUrl, 4000);
+setInterval(publishTunnelUrl, 60_000);
 
 app.listen(PORT, () => {
   console.log(`Serveur Défi Double démarré sur le port ${PORT}`);

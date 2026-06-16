@@ -2124,6 +2124,39 @@
       adminCode:     null
     };
 
+    // ─────── SERVEUR PI (validation des PINs + saisie des matchs) ───────
+    // L'app n'écrit plus les matchs directement : elle les envoie au serveur
+    // (Raspberry), qui vérifie les PINs côté serveur puis écrit le match.
+    // L'URL du serveur est publiée par le Pi dans Firestore (config/server.url)
+    // et lue ici en temps réel : si l'URL du tunnel change, l'app la récupère
+    // automatiquement, sans rien à modifier.
+    let PI_URL = null;
+    function subscribePiUrl() {
+      if (!firebaseReady) return;
+      db.collection('config').doc('server').onSnapshot(
+        d => { PI_URL = (d.exists && d.data().url) ? String(d.data().url).replace(/\/+$/, '') : null; },
+        err => console.error('config/server snapshot:', err)
+      );
+    }
+    // Appel POST au serveur Pi : renvoie l'objet JSON, lève une erreur sinon.
+    async function piPost(path, body) {
+      if (!PI_URL) throw new Error('Serveur indisponible (URL non configurée). Le Raspberry est-il allumé ?');
+      let res;
+      try {
+        res = await fetch(PI_URL + path, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body || {})
+        });
+      } catch (e) {
+        throw new Error('Serveur injoignable. Vérifie que le Raspberry est allumé et connecté.');
+      }
+      let data = {};
+      try { data = await res.json(); } catch (e) {}
+      if (!res.ok || !data.ok) throw new Error(data.error || ('Erreur serveur (' + res.status + ')'));
+      return data;
+    }
+
     // ─────── HELPERS ───────
     const $ = id => document.getElementById(id);
     const escapeHtml = s => String(s).replace(/[&<>"']/g, c =>
@@ -2607,17 +2640,11 @@
         // Mode démo sans Firebase
         return pin === '0000';
       }
+      // Vérification CÔTÉ SERVEUR (Pi) : le navigateur ne voit jamais le hash,
+      // donc le PIN n'est pas crackable hors ligne.
       try {
-        const q = await db.collection('teams').where('name', '==', teamName).limit(1).get();
-        if (q.empty) return false;
-        const data = q.docs[0].data();
-        // Nouveau format : hash en Firestore, on hashe l'input pour comparer
-        if (data.pinHash) {
-          const inputHash = await sha256Hex(String(pin));
-          return inputHash === data.pinHash;
-        }
-        // Compatibilité ascendante (anciens enregistrements en clair)
-        return String(data.pin) === String(pin);
+        const r = await piPost('/verify-pin', { scope: 'team', name: teamName, pin: String(pin) });
+        return !!r.ok;
       } catch (e) {
         console.error('verifyPin:', e);
         return false;
@@ -2707,25 +2734,18 @@
       const calc = computePoints(tA.cote, tB.cote, winnerR.value, threeSet);
 
       try {
-        // 1) Vérifier à nouveau les PINs côté serveur juste avant écriture
-        const okA = await verifyPin(tA.name, $('pinA').value);
-        const okB = await verifyPin(tB.name, $('pinB').value);
-        if (!okA || !okB) throw new Error('PIN invalide à la sauvegarde');
-
-        // 2) Créer le document match. Les points NE sont PAS écrits sur les
-        //    équipes : le classement les déduit de l'historique (voir teamPointsMap).
-        await db.collection('matches').add({
-          equipeA:   tA.name,
-          equipeB:   tB.name,
-          vainqueur: winnerR.value,
-          scores:    { set1: s1, set2: s2, ...(s3 ? { set3: s3 } : {}) },
-          pointsA:   calc.deltaA,
-          pointsB:   calc.deltaB,
-          date:      firebase.firestore.FieldValue.serverTimestamp()
+        // Le serveur (Pi) vérifie les 2 PINs, calcule les points lui-même et
+        // écrit le match. Le navigateur n'écrit plus rien dans Firestore :
+        // impossible de forger un match ou de gonfler les points.
+        const r = await piPost('/submit-match', {
+          teamA: tA.name, pinA: $('pinA').value,
+          teamB: tB.name, pinB: $('pinB').value,
+          winner: winnerR.value,
+          scores: { set1: s1, set2: s2, ...(s3 ? { set3: s3 } : {}) }
         });
 
         status.className = 'save-status ok';
-        status.innerHTML = `✓ Match enregistré · ${escapeHtml(tA.name)} +${calc.deltaA} · ${escapeHtml(tB.name)} +${calc.deltaB}`;
+        status.innerHTML = `✓ Match enregistré · ${escapeHtml(tA.name)} +${num(r.pointsA)} · ${escapeHtml(tB.name)} +${num(r.pointsB)}`;
         setTimeout(() => { resetResultForm(); }, 2500);
       } catch (e) {
         console.error(e);
@@ -2949,23 +2969,27 @@
           return;
         }
 
-        // Génération : PIN aléatoire + hash + version chiffrée (pour affichage admin)
+        // Génération : PIN aléatoire + version chiffrée (pour affichage admin).
+        // Le HASH n'est PAS mis sur le doc public : il sera stocké côté serveur.
         const generated = [];
         for (const t of TEAMS) {
           const pin = randomPin();
-          const pinHash = await sha256Hex(pin);
           const pinEnc  = await encryptWithCode(pin, state.adminCode);
-          generated.push({ ...t, pin /* affichage uniquement */, pinHash, pinEnc, points: 0 });
+          generated.push({ ...t, pin /* affichage uniquement */, pinEnc, points: 0 });
         }
 
-        // Écriture : on stocke pinHash + pinEnc, JAMAIS la version en clair
+        // Écriture des équipes (sans hash de PIN, jamais la version en clair)
         const batch = db.batch();
         generated.forEach(t => {
           const { pin, ...toSave } = t; // on retire la version en clair
-          const ref = db.collection('teams').doc();
-          batch.set(ref, toSave);
+          batch.set(db.collection('teams').doc(), toSave);
         });
         await batch.commit();
+
+        // Enregistrement des hash de PIN côté serveur (zone privée)
+        for (const t of generated) {
+          await piPost('/admin/set-pin', { adminCode: state.adminCode, scope: 'team', name: t.name, pin: t.pin });
+        }
 
         // Affichage des PINs en clair (UNE seule fois — à imprimer / distribuer)
         out.innerHTML = `
@@ -3044,12 +3068,14 @@
       if (!/^\d{4}$/.test(newPin)) { alert('PIN doit être 4 chiffres.'); return; }
       if (!state.adminCode) { alert('Reconnecte-toi à l\'admin.'); return; }
       try {
-        const pinHash = await sha256Hex(newPin);
-        const pinEnc  = await encryptWithCode(newPin, state.adminCode);
-        // On supprime l'ancien champ pin en clair s'il existait
+        // Le hash est stocké côté serveur (zone privée), jamais sur le doc public.
+        await piPost('/admin/set-pin', { adminCode: state.adminCode, scope: 'team', name, pin: newPin });
+        // pinEnc (chiffré avec le code admin) reste pour l'affichage admin ; on
+        // retire tout ancien pinHash/pin en clair du document public.
+        const pinEnc = await encryptWithCode(newPin, state.adminCode);
         await db.collection('teams').doc(id).update({
-          pinHash,
           pinEnc,
+          pinHash: firebase.firestore.FieldValue.delete(),
           pin: firebase.firestore.FieldValue.delete()
         });
         alert(`PIN de ${name} mis à jour.`);
@@ -3160,29 +3186,13 @@
       status.textContent = 'Enregistrement…';
 
       try {
-        // Transaction atomique : on lit le match courant et on calcule le différentiel
-        // (évite les erreurs de double-application si l'utilisateur clique plusieurs fois)
-        await db.runTransaction(async (tx) => {
-          const matchRef = db.collection('matches').doc(editingMatchId);
-          const matchSnap = await tx.get(matchRef);
-          if (!matchSnap.exists) throw new Error('Match introuvable');
-          const oldData = matchSnap.data();
-
-          const tA = state.teamsLive.find(t => t.name === oldData.equipeA);
-          const tB = state.teamsLive.find(t => t.name === oldData.equipeB);
-          if (!tA || !tB) throw new Error('Équipes introuvables');
-
-          const threeSet = !!s3;
-          const calc = computePoints(tA.cote, tB.cote, newWinner, threeSet);
-
-          // On ne touche qu'au match : le classement se recalcule tout seul.
-          tx.update(matchRef, {
-            vainqueur: newWinner,
-            scores:    { set1: s1, set2: s2, ...(s3 ? { set3: s3 } : {}) },
-            pointsA:   calc.deltaA,
-            pointsB:   calc.deltaB,
-            editedAt:  firebase.firestore.FieldValue.serverTimestamp()
-          });
+        // L'édition passe par le serveur (Pi) : il recalcule les points lui-même
+        // (le navigateur ne peut plus modifier un match directement).
+        await piPost('/admin/edit-match', {
+          adminCode: state.adminCode,
+          matchId: editingMatchId,
+          winner: newWinner,
+          scores: { set1: s1, set2: s2, ...(s3 ? { set3: s3 } : {}) }
         });
 
         status.className = 'save-status ok';
@@ -3297,12 +3307,12 @@
 
       try {
         const pin     = randomPin();
-        const pinHash = await sha256Hex(pin);
         const pinEnc  = await encryptWithCode(pin, state.adminCode);
 
-        await db.collection('teams').add({
-          name, cote, points: 0, pinHash, pinEnc
-        });
+        // 1) créer l'équipe (sans hash de PIN sur le doc public)
+        await db.collection('teams').add({ name, cote, points: 0, pinEnc });
+        // 2) enregistrer le hash du PIN côté serveur (zone privée)
+        await piPost('/admin/set-pin', { adminCode: state.adminCode, scope: 'team', name, pin });
 
         status.className = 'save-status ok';
         status.textContent = '✓ Équipe ajoutée';
@@ -3637,15 +3647,10 @@
 
     async function verifyJPin(joueurName, pin) {
       if (!firebaseReady) return pin === '0000';
+      // Vérification côté serveur (Pi) — voir verifyPin.
       try {
-        const q = await db.collection('juniors').where('name', '==', joueurName).limit(1).get();
-        if (q.empty) return false;
-        const data = q.docs[0].data();
-        if (data.pinHash) {
-          const inputHash = await sha256Hex(String(pin));
-          return inputHash === data.pinHash;
-        }
-        return String(data.pin) === String(pin);
+        const r = await piPost('/verify-pin', { scope: 'junior', name: joueurName, pin: String(pin) });
+        return !!r.ok;
       } catch (e) { console.error('verifyJPin:', e); return false; }
     }
 
@@ -3703,21 +3708,17 @@
       const greenBalls = !!((jA && jA.green) || (jB && jB.green));
 
       try {
-        const okA = await verifyJPin(jA.name, $('jpinA').value);
-        const okB = await verifyJPin(jB.name, $('jpinB').value);
-        if (!okA || !okB) throw new Error('PIN invalide');
-
-        // Le classement déduit les étoiles de l'historique : on n'écrit que le match.
-        await db.collection('juniors_matches').add({
-          joueurA: jA.name, joueurB: jB.name,
-          vainqueur: winner,
-          scores: { set1: s1, set2: s2, ...(s3 ? { set3: s3 } : {}) },
-          starsA, starsB, greenBalls,
-          date: firebase.firestore.FieldValue.serverTimestamp()
+        // Le serveur (Pi) vérifie les 2 PINs, calcule les étoiles + balles vertes
+        // et écrit le match. Le navigateur n'écrit plus rien.
+        const r = await piPost('/submit-jmatch', {
+          joueurA: jA.name, pinA: $('jpinA').value,
+          joueurB: jB.name, pinB: $('jpinB').value,
+          winner: winner,
+          scores: { set1: s1, set2: s2, ...(s3 ? { set3: s3 } : {}) }
         });
 
         status.className = 'save-status ok';
-        status.innerHTML = `✓ Match enregistré · ${escapeHtml(jA.name)} +${starsA}⭐ · ${escapeHtml(jB.name)} +${starsB}⭐`;
+        status.innerHTML = `✓ Match enregistré · ${escapeHtml(jA.name)} +${num(r.starsA)}⭐ · ${escapeHtml(jB.name)} +${num(r.starsB)}⭐`;
         setTimeout(() => resetJResultForm(), 2500);
       } catch (e) {
         console.error(e);
@@ -3773,16 +3774,19 @@
         const generated = [];
         for (const j of JUNIORS) {
           const pin = randomPin();
-          const pinHash = await sha256Hex(pin);
           const pinEnc  = await encryptWithCode(pin, state.adminCode);
-          generated.push({ ...j, pin, pinHash, pinEnc, stars: 0 });
+          generated.push({ ...j, pin, pinEnc, stars: 0 });
         }
         const batch = db.batch();
         generated.forEach(j => {
-          const { pin, ...toSave } = j;
+          const { pin, ...toSave } = j;   // sans hash, sans clair
           batch.set(db.collection('juniors').doc(), toSave);
         });
         await batch.commit();
+        // Hash de PIN stockés côté serveur (zone privée)
+        for (const j of generated) {
+          await piPost('/admin/set-pin', { adminCode: state.adminCode, scope: 'junior', name: j.name, pin: j.pin });
+        }
         out.innerHTML = `
           <div style="font-size:0.85rem;font-weight:500;margin-bottom:0.6rem;color:var(--primary-dark);">
             ✓ ${generated.length} joueurs juniors créés. PINs à distribuer :
@@ -3815,9 +3819,9 @@
       status.textContent = 'Création…';
       try {
         const pin     = randomPin();
-        const pinHash = await sha256Hex(pin);
         const pinEnc  = await encryptWithCode(pin, state.adminCode);
-        await db.collection('juniors').add({ name, green, stars: 0, pinHash, pinEnc });
+        await db.collection('juniors').add({ name, green, stars: 0, pinEnc });
+        await piPost('/admin/set-pin', { adminCode: state.adminCode, scope: 'junior', name, pin });
         status.className = 'save-status ok'; status.textContent = '✓ Joueur ajouté';
         pinOut.innerHTML = `<div class="seed-pin-list" style="margin-top:0.8rem;">
           <div class="seed-pin-item"><span>${escapeHtml(name)}${green?' 🟢':''}</span><span class="pin-val">${pin}</span></div>
@@ -3873,10 +3877,12 @@
       if (!/^\d{4}$/.test(newPin)) { alert('PIN doit être 4 chiffres.'); return; }
       if (!state.adminCode) { alert('Reconnecte-toi à l\'admin.'); return; }
       try {
-        const pinHash = await sha256Hex(newPin);
-        const pinEnc  = await encryptWithCode(newPin, state.adminCode);
+        await piPost('/admin/set-pin', { adminCode: state.adminCode, scope: 'junior', name, pin: newPin });
+        const pinEnc = await encryptWithCode(newPin, state.adminCode);
         await db.collection('juniors').doc(id).update({
-          pinHash, pinEnc, pin: firebase.firestore.FieldValue.delete()
+          pinEnc,
+          pinHash: firebase.firestore.FieldValue.delete(),
+          pin: firebase.firestore.FieldValue.delete()
         });
         alert(`PIN de ${name} mis à jour.`);
       } catch (e) { alert('Erreur : ' + e.message); }
@@ -3996,33 +4002,12 @@
       status.textContent = 'Enregistrement…';
 
       try {
-        await db.runTransaction(async (tx) => {
-          const matchRef = db.collection('juniors_matches').doc(editingJMatchId);
-          const matchSnap = await tx.get(matchRef);
-          if (!matchSnap.exists) throw new Error('Match introuvable');
-          const oldData = matchSnap.data();
-
-          const jA = state.juniorsLive.find(j => j.name === oldData.joueurA);
-          const jB = state.juniorsLive.find(j => j.name === oldData.joueurB);
-          if (!jA || !jB) throw new Error('Joueurs introuvables');
-
-          const newStarsA = newWinner === 'A' ? 2 : 1;
-          const newStarsB = newWinner === 'B' ? 2 : 1;
-
-          const updateData = {
-            vainqueur: newWinner,
-            scores:    { set1: s1, set2: s2, ...(s3 ? { set3: s3 } : {}) },
-            starsA:    newStarsA,
-            starsB:    newStarsB,
-            editedAt:  firebase.firestore.FieldValue.serverTimestamp()
-          };
-          // Si l'ancien format avait un seul "score", on le supprime
-          if (oldData.score !== undefined) {
-            updateData.score = firebase.firestore.FieldValue.delete();
-          }
-
-          // On ne touche qu'au match : le classement se recalcule tout seul.
-          tx.update(matchRef, updateData);
+        // L'édition passe par le serveur (Pi), qui recalcule les étoiles.
+        await piPost('/admin/edit-jmatch', {
+          adminCode: state.adminCode,
+          matchId: editingJMatchId,
+          winner: newWinner,
+          scores: { set1: s1, set2: s2, ...(s3 ? { set3: s3 } : {}) }
         });
 
         status.className = 'save-status ok';
@@ -4049,6 +4034,7 @@
 
     // ─────── DÉMARRAGE ───────
     subscribeFirestore();
+    subscribePiUrl();
     renderTeamsLive();
     populateSelects();
     renderMatchesFilter();
