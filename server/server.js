@@ -223,27 +223,49 @@ app.post('/admin/set-pin', async (req, res) => {
   }
 });
 
-// Migration unique : copie les pinHash existants (sur teams/juniors) vers
-// `secrets`, puis SUPPRIME le champ pinHash des documents publics (pour qu'il
-// ne soit plus lisible/cassable par le navigateur). À lancer une seule fois.
+// Étape 1 de migration : COPIE les pinHash existants (teams/juniors) vers
+// `secrets`. Ne supprime rien → l'ancien site continue de marcher pendant la
+// bascule (zéro coupure). À lancer avant de mettre le nouveau code en ligne.
 app.post('/admin/migrate', async (req, res) => {
   try {
     const { adminCode } = req.body || {};
     if (!(await adminCodeIsValid(adminCode))) return res.status(403).json({ ok: false, error: 'Code admin invalide' });
-    let moved = 0;
+    let copied = 0;
     for (const coll of ['teams', 'juniors']) {
       const snap = await db.collection(coll).get();
       for (const doc of snap.docs) {
         const h = doc.data().pinHash;
         if (!h) continue;
         await db.collection('secrets').doc(doc.id).set({ hash: h });
-        await doc.ref.update({ pinHash: FieldValue.delete() });
-        moved++;
+        copied++;
       }
     }
-    return res.json({ ok: true, moved });
+    return res.json({ ok: true, copied });
   } catch (e) {
     console.error('migrate:', e);
+    return res.status(500).json({ ok: false, error: 'Erreur serveur' });
+  }
+});
+
+// Étape 2 de migration : SUPPRIME le champ pinHash des documents publics
+// (à lancer APRÈS la mise en ligne du nouveau code, qui ne lit plus pinHash).
+// C'est ce qui rend les PINs non crackables (le hash n'est plus exposé).
+app.post('/admin/cleanup-hashes', async (req, res) => {
+  try {
+    const { adminCode } = req.body || {};
+    if (!(await adminCodeIsValid(adminCode))) return res.status(403).json({ ok: false, error: 'Code admin invalide' });
+    let removed = 0;
+    for (const coll of ['teams', 'juniors']) {
+      const snap = await db.collection(coll).get();
+      for (const doc of snap.docs) {
+        if (doc.data().pinHash === undefined) continue;
+        await doc.ref.update({ pinHash: FieldValue.delete() });
+        removed++;
+      }
+    }
+    return res.json({ ok: true, removed });
+  } catch (e) {
+    console.error('cleanup-hashes:', e);
     return res.status(500).json({ ok: false, error: 'Erreur serveur' });
   }
 });
