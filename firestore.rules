@@ -3,41 +3,31 @@ rules_version = '2';
 // ============================================================================
 // Règles de sécurité Firestore — Défi Double TC Morgins
 //
-// Posture choisie : SANS authentification (tournoi amical de club).
-// Objectif : sortir du « mode test » (tout ouvert) sans casser l'app ni le
-// panneau admin, qui fonctionnent tous deux de façon anonyme.
+// Architecture : un serveur de confiance (Raspberry, via le SDK Admin qui
+// contourne ces règles) est le SEUL à écrire/éditer les matchs et à gérer les
+// hash de PIN (collection privée `secrets`). Le navigateur ne fait que LIRE,
+// plus quelques opérations admin non sensibles (suppression/édition de fiches).
 //
-// Ce que ces règles APPORTENT :
-//   ✓ Les points/étoiles ne sont JAMAIS écrits directement : ils sont déduits
-//     côté app en additionnant les matchs (voir teamPointsMap/juniorStarsMap
-//     dans index.html). Les règles interdisent donc toute modification des
-//     champs `points` (teams) et `stars` (juniors). Impossible de s'attribuer
-//     des points sans créer un vrai match, visible dans l'historique.
-//   ✓ Valident la forme et le type de chaque écriture (bloque les documents
-//     malformés et les payloads XSS écrits directement en base).
-//   ✓ Plafonnent les valeurs numériques des matchs (deltas aberrants refusés).
-//   ✓ Protègent le hash du code admin : il peut être créé une fois mais PAS
-//     écrasé par un inconnu via l'app.
+// Ce que ça garantit :
+//   ✓ Personne ne peut créer ni modifier un match depuis le navigateur
+//     (création/édition réservées au serveur, qui vérifie les PINs). Donc
+//     impossible de se fabriquer un match gagnant.
+//   ✓ Les hash de PIN ne sont jamais lisibles par le navigateur (collection
+//     `secrets` interdite) → les PINs ne sont pas crackables.
+//   ✓ Les points/étoiles ne sont jamais écrits (déduits des matchs).
 //
-// Limite ASSUMÉE (faute d'authentification) :
-//   ✗ Un utilisateur technique peut encore, depuis la console de son
-//     navigateur, créer un match plausible (donc visible) ou supprimer un
-//     document. Les régles ne peuvent pas distinguer ces gestes d'une
-//     opération légitime, car l'app écrit sans identité. Mais un faux match
-//     est traçable et supprimable par l'admin — contrairement à l'ancien
-//     compteur qu'on pouvait gonfler en silence. Pour fermer complètement,
-//     ajouter Firebase Auth anonyme + un drapeau admin (voir bloc en bas).
+// Reste possible (assumé, visible/réversible) : un admin (ou un curieux) peut
+// supprimer une fiche/un match depuis le navigateur — ça n'attribue pas de
+// points, c'est visible et réparable.
 //
-// Déployer :  firebase deploy --only firestore:rules
-//   (ou copier-coller dans Console Firebase > Firestore > Règles)
+// Déployer : Console Firebase > Firestore > Règles > coller > Publier.
 // ============================================================================
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ---- helpers ----
     function isScore(s) {
-      return s is string && s.size() <= 10 && s.matches('^[0-9]{1,2}-[0-9]{1,2}$');
+      return s is string && s.size() >= 1 && s.size() <= 12;
     }
     function validScores(sc) {
       return sc is map
@@ -51,118 +41,63 @@ service cloud.firestore {
     // ---- ÉQUIPES (adulte) ----
     match /teams/{id} {
       allow read: if true;
-
-      // seed / ajout d'équipe (admin, anonyme)
+      // Création (seed / ajout) : plus de pinHash sur le doc public (il va dans `secrets`).
       allow create: if shortStr(request.resource.data.name, 80)
                     && request.resource.data.cote is number
                     && request.resource.data.cote >= 0 && request.resource.data.cote <= 100
-                    && request.resource.data.points is number
-                    && request.resource.data.pinHash is string;
-
-      // Seuls les PINs sont modifiables. Les points NE sont jamais écrits
-      // (ils sont déduits des matchs), donc interdits ici. `pin` est toléré
-      // car l'app supprime ce champ en clair hérité lors d'un changement de PIN.
+                    && request.resource.data.points is number;
+      // Seuls pinEnc (chiffré, sûr) / pin (legacy, supprimé) / pinHash (supprimé) bougent.
       allow update: if request.resource.data.diff(resource.data).affectedKeys()
                          .hasOnly(['pinHash', 'pinEnc', 'pin'])
                     && request.resource.data.points == resource.data.points;
-
-      allow delete: if true; // suppression d'équipe via le panneau admin
+      allow delete: if true;
     }
 
-    // ---- MATCHS (adulte) ----
+    // ---- MATCHS (adulte) : écriture/édition réservées au serveur ----
     match /matches/{id} {
       allow read: if true;
-
-      allow create: if request.resource.data.keys().hasOnly(
-                         ['equipeA','equipeB','vainqueur','scores','pointsA','pointsB','date'])
-                    && shortStr(request.resource.data.equipeA, 80)
-                    && shortStr(request.resource.data.equipeB, 80)
-                    && request.resource.data.vainqueur in ['A','B']
-                    && validScores(request.resource.data.scores)
-                    && request.resource.data.pointsA is number
-                    && request.resource.data.pointsA >= 0 && request.resource.data.pointsA <= 100
-                    && request.resource.data.pointsB is number
-                    && request.resource.data.pointsB >= 0 && request.resource.data.pointsB <= 100
-                    && request.resource.data.date == request.time;
-
-      // édition d'un match via le panneau admin
-      allow update: if request.resource.data.vainqueur in ['A','B']
-                    && validScores(request.resource.data.scores)
-                    && request.resource.data.pointsA is number
-                    && request.resource.data.pointsA >= 0 && request.resource.data.pointsA <= 100
-                    && request.resource.data.pointsB is number
-                    && request.resource.data.pointsB >= 0 && request.resource.data.pointsB <= 100;
-
-      allow delete: if true; // suppression / reset via le panneau admin
+      allow create: if false;   // seul le serveur (SDK Admin) crée les matchs
+      allow update: if false;   // édition via le serveur uniquement
+      allow delete: if true;    // suppression / reset depuis le panneau admin
     }
 
     // ---- JOUEURS (junior) ----
     match /juniors/{id} {
       allow read: if true;
-
       allow create: if shortStr(request.resource.data.name, 80)
                     && request.resource.data.stars is number
-                    && (!('green' in request.resource.data) || request.resource.data.green is bool)
-                    && request.resource.data.pinHash is string;
-
-      // Comme pour les équipes : seuls les PINs changent, jamais les étoiles
-      // (déduites des matchs).
+                    && (!('green' in request.resource.data) || request.resource.data.green is bool);
       allow update: if request.resource.data.diff(resource.data).affectedKeys()
-                         .hasOnly(['pinHash', 'pinEnc', 'pin'])
-                    && request.resource.data.stars == resource.data.stars;
-
+                         .hasOnly(['pinHash', 'pinEnc', 'pin', 'green'])
+                    && request.resource.data.stars == resource.data.stars
+                    && (!('green' in request.resource.data) || request.resource.data.green is bool);
       allow delete: if true;
     }
 
-    // ---- MATCHS (junior) ----
+    // ---- MATCHS (junior) : écriture/édition réservées au serveur ----
     match /juniors_matches/{id} {
       allow read: if true;
-
-      allow create: if request.resource.data.keys().hasOnly(
-                         ['joueurA','joueurB','vainqueur','scores','starsA','starsB','greenBalls','date'])
-                    && shortStr(request.resource.data.joueurA, 80)
-                    && shortStr(request.resource.data.joueurB, 80)
-                    && request.resource.data.vainqueur in ['A','B']
-                    && validScores(request.resource.data.scores)
-                    && request.resource.data.starsA is number
-                    && request.resource.data.starsA >= 0 && request.resource.data.starsA <= 10
-                    && request.resource.data.starsB is number
-                    && request.resource.data.starsB >= 0 && request.resource.data.starsB <= 10
-                    && request.resource.data.greenBalls is bool
-                    && request.resource.data.date == request.time;
-
-      allow update: if request.resource.data.vainqueur in ['A','B']
-                    && validScores(request.resource.data.scores)
-                    && request.resource.data.starsA is number && request.resource.data.starsA >= 0 && request.resource.data.starsA <= 10
-                    && request.resource.data.starsB is number && request.resource.data.starsB >= 0 && request.resource.data.starsB <= 10;
-
+      allow create: if false;
+      allow update: if false;
       allow delete: if true;
     }
 
-    // ---- CONFIG (hash du code admin) ----
+    // ---- SECRETS (hash des PINs) : INTERDIT au navigateur ----
+    // Seul le serveur (SDK Admin) y accède. Les clients ne peuvent ni lire ni écrire.
+    match /secrets/{id} {
+      allow read, write: if false;
+    }
+
+    // ---- CONFIG ----
+    // config/admin : hash du code admin (lu par l'app à la connexion).
+    // config/server : URL du serveur Pi, écrite par le serveur (SDK Admin), lue par l'app.
     match /config/{id} {
-      // Le client doit lire ce doc pour vérifier le code admin à la connexion.
       allow read: if true;
-      // Création unique (initialisation). On n'autorise PAS l'écrasement :
-      // un inconnu ne peut donc pas réinitialiser/voler le code admin via l'app.
-      // Pour changer le code admin ensuite, passer par la console Firebase.
-      allow create: if request.resource.data.pinHash is string;
-      allow update, delete: if false;
+      allow create: if request.resource.data.pinHash is string; // init du code admin
+      allow update, delete: if false;                            // le serveur passe outre via le SDK Admin
     }
 
     // Tout le reste : refusé.
     match /{document=**} { allow read, write: if false; }
   }
 }
-
-
-// ============================================================================
-// POUR PLUS TARD — option avec authentification (si un jour les enjeux montent)
-// ----------------------------------------------------------------------------
-// Étapes : activer Auth anonyme (visiteurs) + un compte admin avec custom
-// claim `admin:true`. On exige alors `request.auth.token.admin == true` sur
-// toutes les opérations sensibles (delete, create d'équipe, édition de match,
-// config), et `request.auth != null` sur les créations de match. C'est la
-// seule façon d'empêcher réellement un inconnu de supprimer/trafiquer la base.
-// Voir SECURITY_REVIEW.md (recommandation 2) pour le détail.
-// ============================================================================
