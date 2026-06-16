@@ -130,6 +130,7 @@ app.post('/verify-pin', async (req, res) => {
     const doc = await findByName(collection, name);
     if (!doc) return res.json({ ok: false });
     const ok = await pinIsValid(doc.id, pin);
+    console.log(`[verify-pin] ${collection} "${name}" -> ${ok ? 'OK' : 'refusé'}`);
     return res.json({ ok });
   } catch (e) {
     console.error('verify-pin:', e);
@@ -162,6 +163,7 @@ app.post('/submit-match', async (req, res) => {
       pointsA: deltaA, pointsB: deltaB,
       date: FieldValue.serverTimestamp(),
     });
+    console.log(`[submit-match] ${tA.name} vs ${tB.name} | vainqueur ${winner} | +${deltaA}/+${deltaB}`);
     return res.json({ ok: true, pointsA: deltaA, pointsB: deltaB });
   } catch (e) {
     console.error('submit-match:', e);
@@ -195,6 +197,7 @@ app.post('/submit-jmatch', async (req, res) => {
       starsA, starsB, greenBalls,
       date: FieldValue.serverTimestamp(),
     });
+    console.log(`[submit-jmatch] ${jA.name} vs ${jB.name} | vainqueur ${winner} | +${starsA}⭐/+${starsB}⭐`);
     return res.json({ ok: true, starsA, starsB, greenBalls });
   } catch (e) {
     console.error('submit-jmatch:', e);
