@@ -1221,11 +1221,59 @@
       text-align: center;
       padding: 1.5rem;
       color: var(--text-light);
-      font-size: 0.85rem;
-      background: var(--white);
-      border: 1px dashed var(--border);
-      border-radius: var(--radius-lg);
+    /* ============================================================
+       PAGE AIDE (guide d'utilisation — pensé lisible pour tous)
+    ============================================================ */
+    .aide-intro {
+      font-size: 1.05rem; line-height: 1.7; color: var(--text);
+      background: var(--primary-light); border: 1px solid var(--primary-100);
+      border-radius: var(--radius-lg); padding: 1rem 1.1rem; margin-bottom: 1.2rem;
     }
+    .aide-toc { display: grid; gap: 0.6rem; margin-bottom: 1.6rem; }
+    .aide-toc a {
+      display: flex; align-items: center; gap: 0.6rem;
+      font-size: 1.05rem; font-weight: 600; color: var(--text-dark);
+      background: var(--white); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); padding: 0.85rem 1rem;
+      box-shadow: var(--shadow-sm);
+    }
+    .aide-toc a .num {
+      flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%;
+      background: var(--primary); color: #fff; font-weight: 700;
+      display: flex; align-items: center; justify-content: center; font-size: 0.95rem;
+    }
+    .aide-section { margin: 0 0 1.8rem; scroll-margin-top: 130px; }
+    .aide-section > h2 {
+      font-size: 1.35rem; color: var(--primary-dark); margin-bottom: 0.5rem;
+      display: flex; align-items: center; gap: 0.5rem;
+    }
+    .aide-section p { font-size: 1.02rem; line-height: 1.7; margin-bottom: 0.7rem; color: var(--text); }
+    .aide-steps { list-style: none; padding: 0; margin: 0.6rem 0; display: grid; gap: 0.7rem; }
+    .aide-steps li {
+      display: flex; gap: 0.7rem; align-items: flex-start;
+      font-size: 1.02rem; line-height: 1.6;
+    }
+    .aide-steps li .num {
+      flex: 0 0 auto; width: 28px; height: 28px; border-radius: 50%;
+      background: var(--navy); color: #fff; font-weight: 700;
+      display: flex; align-items: center; justify-content: center; font-size: 0.9rem; margin-top: 1px;
+    }
+    .aide-shot { margin: 0.9rem 0 0.4rem; }
+    .aide-shot img {
+      width: 100%; border-radius: var(--radius-lg);
+      border: 1px solid var(--border); box-shadow: var(--shadow-md);
+    }
+    .aide-shot .ph {
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.4rem;
+      min-height: 180px; color: var(--text-light); font-size: 0.95rem; text-align: center;
+      background: var(--bg); border: 2px dashed var(--border); border-radius: var(--radius-lg); padding: 1rem;
+    }
+    .aide-shot .cap { font-size: 0.85rem; color: var(--text-light); text-align: center; margin-top: 0.35rem; }
+    .aide-note {
+      font-size: 0.98rem; line-height: 1.6; background: var(--yellow-bg); color: var(--yellow);
+      border-radius: var(--radius); padding: 0.8rem 0.9rem; margin-top: 0.6rem;
+    }
+    .aide-divider { border: none; border-top: 2px solid var(--border); margin: 2rem 0 1.6rem; }
   </style>
 </head>
 <body>
@@ -1283,6 +1331,12 @@
       <button class="tab-btn tab-junior" onclick="switchTab('jmatches')" id="tab-jmatches">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
         Matchs
+      </button>
+
+      <!-- Onglet AIDE (toujours visible) -->
+      <button class="tab-btn" onclick="switchTab('aide')" id="tab-aide">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        Aide
       </button>
     </div>
   </nav>
@@ -1833,6 +1887,138 @@
 
         <div id="jmatchesBody"><!-- Rempli par JS --></div>
       </div><!-- /screen-jmatches -->
+
+      <!-- ====== ÉCRAN AIDE ====== -->
+      <div class="screen" id="screen-aide">
+        <div class="screen-header">
+          <div class="screen-title">❓ Aide — comment utiliser l'app</div>
+          <div class="screen-sub">Un petit guide simple, étape par étape</div>
+        </div>
+
+        <div class="aide-intro">
+          Bienvenue ! Cette application sert à <strong>suivre le classement</strong> du Défi Double
+          et à <strong>enregistrer les résultats</strong> de vos matchs. Pas besoin d'installer quoi que ce soit.
+          Voici à quoi servent les différents onglets 👇
+        </div>
+
+        <nav class="aide-toc">
+          <a href="#aide-toggle"><span class="num">1</span> Choisir Adulte ou Junior</a>
+          <a href="#aide-calc"><span class="num">2</span> La Calculatrice</a>
+          <a href="#aide-equipes"><span class="num">3</span> Les Équipes (classement + profils)</a>
+          <a href="#aide-saisie"><span class="num">4</span> La Saisie d'un match</a>
+          <a href="#aide-matchs"><span class="num">5</span> Les Matchs (historique)</a>
+          <a href="#aide-junior"><span class="num">6</span> Le circuit Junior</a>
+          <a href="#aide-souci"><span class="num">7</span> En cas de souci</a>
+        </nav>
+
+        <!-- 1. Toggle -->
+        <section class="aide-section" id="aide-toggle">
+          <h2>1 · Choisir Adulte ou Junior</h2>
+          <p>Tout en haut de l'écran, un bouton permet de basculer entre les <strong>deux tournois</strong> :
+             le <strong>Défi Double (Adulte)</strong> et le <strong>Défi Junior</strong>. Touchez celui qui vous concerne :
+             les onglets en dessous changent automatiquement.</p>
+          <div class="aide-shot" id="shot-toggle">
+            <div class="ph">📷<br>Capture à venir<br><small>(le bouton Adulte / Junior en haut)</small></div>
+          </div>
+        </section>
+
+        <hr class="aide-divider">
+
+        <!-- 2. Calculatrice -->
+        <section class="aide-section" id="aide-calc">
+          <h2>2 · La Calculatrice</h2>
+          <p><strong>À quoi ça sert :</strong> savoir à l'avance combien de points rapporterait un match,
+             <em>sans rien enregistrer</em>. Pratique pour se faire une idée avant de jouer.</p>
+          <ul class="aide-steps">
+            <li><span class="num">1</span> Entrez la <strong>cote</strong> de votre équipe et celle de l'équipe adverse.</li>
+            <li><span class="num">2</span> Choisissez qui gagne (et s'il y a eu un 3ᵉ set).</li>
+            <li><span class="num">3</span> L'app affiche les points gagnés par chaque équipe. C'est juste une simulation.</li>
+          </ul>
+          <div class="aide-shot" id="shot-calc">
+            <div class="ph">📷<br>Capture à venir<br><small>(onglet Calculatrice)</small></div>
+          </div>
+        </section>
+
+        <hr class="aide-divider">
+
+        <!-- 3. Équipes -->
+        <section class="aide-section" id="aide-equipes">
+          <h2>3 · Les Équipes (classement)</h2>
+          <p><strong>À quoi ça sert :</strong> voir le <strong>classement en direct</strong> de toutes les équipes,
+             avec leurs points. Vous pouvez trier par classement, par cote, ou par ordre alphabétique.</p>
+          <p>💡 <strong>Astuce :</strong> touchez le nom d'une équipe pour ouvrir son <strong>profil</strong> :
+             ses points, ses victoires et défaites, sa série en cours, son meilleur match…</p>
+          <div class="aide-shot" id="shot-equipes">
+            <div class="ph">📷<br>Capture à venir<br><small>(onglet Équipes — le classement)</small></div>
+          </div>
+          <div class="aide-shot" id="shot-profil">
+            <div class="ph">📷<br>Capture à venir<br><small>(le profil d'une équipe après avoir cliqué dessus)</small></div>
+          </div>
+        </section>
+
+        <hr class="aide-divider">
+
+        <!-- 4. Saisie -->
+        <section class="aide-section" id="aide-saisie">
+          <h2>4 · La Saisie d'un match</h2>
+          <p><strong>À quoi ça sert :</strong> enregistrer le résultat d'un match. Pour que ce soit sécurisé,
+             il faut le <strong>code PIN</strong> (4 chiffres) des <strong>deux équipes</strong>. Ça se fait en 3 étapes :</p>
+          <ul class="aide-steps">
+            <li><span class="num">1</span> Choisissez <strong>votre équipe</strong>, puis tapez <strong>votre code PIN</strong>. Un ✓ vert apparaît si c'est bon.</li>
+            <li><span class="num">2</span> Choisissez l'<strong>équipe adverse</strong>, et <strong>votre adversaire tape SON code PIN</strong>.</li>
+            <li><span class="num">3</span> Entrez le <strong>score</strong>, désignez le <strong>vainqueur</strong>, puis validez. C'est enregistré !</li>
+          </ul>
+          <div class="aide-note">🔑 Le code PIN est le petit code secret à 4 chiffres de chaque équipe.
+             Il évite que quelqu'un enregistre un résultat à votre place.</div>
+          <div class="aide-shot" id="shot-saisie">
+            <div class="ph">📷<br>Capture à venir<br><small>(onglet Saisie — les étapes du PIN)</small></div>
+          </div>
+        </section>
+
+        <hr class="aide-divider">
+
+        <!-- 5. Matchs -->
+        <section class="aide-section" id="aide-matchs">
+          <h2>5 · Les Matchs (historique)</h2>
+          <p><strong>À quoi ça sert :</strong> revoir <strong>tous les matchs déjà joués</strong>, du plus récent au plus ancien,
+             avec les scores et les points. Vous pouvez <strong>filtrer par équipe</strong> pour ne voir que ses matchs.</p>
+          <div class="aide-shot" id="shot-matchs">
+            <div class="ph">📷<br>Capture à venir<br><small>(onglet Matchs — l'historique)</small></div>
+          </div>
+        </section>
+
+        <hr class="aide-divider">
+
+        <!-- 6. Junior -->
+        <section class="aide-section" id="aide-junior">
+          <h2>6 · Le circuit Junior</h2>
+          <p>Le tournoi <strong>Junior</strong> fonctionne pareil, avec quelques différences :</p>
+          <ul class="aide-steps">
+            <li><span class="num">★</span> Le classement se fait en <strong>étoiles</strong> : <strong>+2 ⭐</strong> pour le vainqueur, <strong>+1 ⭐</strong> pour le perdant.</li>
+            <li><span class="num">🟢</span> Certains joueurs jouent avec des <strong>balles vertes</strong> : l'app vous prévient si c'est le cas.</li>
+            <li><span class="num">=</span> Les onglets <strong>Joueurs</strong>, <strong>Saisie</strong> et <strong>Matchs</strong> marchent comme côté adulte.</li>
+          </ul>
+          <div class="aide-shot" id="shot-jjoueurs">
+            <div class="ph">📷<br>Capture à venir<br><small>(Junior — onglet Joueurs)</small></div>
+          </div>
+          <div class="aide-shot" id="shot-jsaisie">
+            <div class="ph">📷<br>Capture à venir<br><small>(Junior — la Saisie)</small></div>
+          </div>
+          <div class="aide-shot" id="shot-jmatchs">
+            <div class="ph">📷<br>Capture à venir<br><small>(Junior — les Matchs)</small></div>
+          </div>
+        </section>
+
+        <hr class="aide-divider">
+
+        <!-- 7. Souci -->
+        <section class="aide-section" id="aide-souci">
+          <h2>7 · En cas de souci</h2>
+          <p>Si un message <strong>« Serveur momentanément indisponible »</strong> apparaît : pas de panique,
+             attendez quelques secondes et <strong>réessayez</strong>. Si ça persiste, prévenez l'organisateur.</p>
+          <p>Si vous avez oublié votre code PIN, demandez à l'organisateur du tournoi.</p>
+        </section>
+      </div><!-- /screen-aide -->
 
     </div>
   </main>
