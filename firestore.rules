@@ -93,8 +93,10 @@ service cloud.firestore {
     // config/server : URL du serveur Pi, écrite par le serveur (SDK Admin), lue par l'app.
     match /config/{id} {
       allow read: if true;
-      allow create: if request.resource.data.pinHash is string; // init du code admin
-      allow update, delete: if false;                            // le serveur passe outre via le SDK Admin
+      // Seul config/admin peut être créé par le navigateur (init du code admin).
+      // config/server est écrit par le serveur (SDK Admin), qui passe outre.
+      allow create: if id == 'admin' && request.resource.data.pinHash is string;
+      allow update, delete: if false;
     }
 
     // Tout le reste : refusé.
