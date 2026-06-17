@@ -52,6 +52,26 @@ function computePoints(coteA, coteB, winner, threeSet) {
   };
 }
 
+// Déduit le vainqueur ('A'/'B') à partir des scores "a-b" (a = jeux équipe A).
+// Renvoie null si incohérent (set à égalité, 1 set partout, scores incomplets)
+// → le serveur refuse alors le match. C'est la garantie « pas de score à l'envers » :
+// le vainqueur n'est jamais cru sur parole, il est recalculé à partir des sets.
+function deriveWinner(scores) {
+  let setsA = 0, setsB = 0, entered = 0;
+  for (const k of ['set1', 'set2', 'set3']) {
+    const v = scores[k];
+    if (v === undefined || v === '') continue;
+    const parts = String(v).split('-');
+    if (parts.length !== 2) return null;
+    const a = parseInt(parts[0], 10), b = parseInt(parts[1], 10);
+    if (!Number.isInteger(a) || !Number.isInteger(b) || a < 0 || b < 0 || a === b) return null;
+    entered++;
+    if (a > b) setsA++; else setsB++;
+  }
+  if (entered < 2 || setsA === setsB) return null;
+  return setsA > setsB ? 'A' : 'B';
+}
+
 function isValidScore(s) {
   return typeof s === 'string' && s.length >= 1 && s.length <= 12;
 }
@@ -141,11 +161,12 @@ app.post('/verify-pin', async (req, res) => {
 // Saisie d'un match ADULTE : vérifie les 2 PINs, calcule les points, écrit le match.
 app.post('/submit-match', async (req, res) => {
   try {
-    const { teamA, pinA, teamB, pinB, winner, scores } = req.body || {};
-    if (winner !== 'A' && winner !== 'B') return res.status(400).json({ ok: false, error: 'Vainqueur invalide' });
+    const { teamA, pinA, teamB, pinB, scores } = req.body || {};
     if (teamA === teamB) return res.status(400).json({ ok: false, error: 'Une équipe ne peut pas jouer contre elle-même' });
     const sc = cleanScores(scores);
     if (!sc) return res.status(400).json({ ok: false, error: 'Scores invalides' });
+    const winner = deriveWinner(sc);
+    if (!winner) return res.status(400).json({ ok: false, error: 'Scores incohérents : vainqueur indéterminable' });
 
     const tA = await findByName('teams', teamA);
     const tB = await findByName('teams', teamB);
@@ -174,11 +195,12 @@ app.post('/submit-match', async (req, res) => {
 // Saisie d'un match JUNIOR : vérifie les 2 PINs, calcule les étoiles, écrit le match.
 app.post('/submit-jmatch', async (req, res) => {
   try {
-    const { joueurA, pinA, joueurB, pinB, winner, scores } = req.body || {};
-    if (winner !== 'A' && winner !== 'B') return res.status(400).json({ ok: false, error: 'Vainqueur invalide' });
+    const { joueurA, pinA, joueurB, pinB, scores } = req.body || {};
     if (joueurA === joueurB) return res.status(400).json({ ok: false, error: 'Un joueur ne peut pas jouer contre lui-même' });
     const sc = cleanScores(scores);
     if (!sc) return res.status(400).json({ ok: false, error: 'Scores invalides' });
+    const winner = deriveWinner(sc);
+    if (!winner) return res.status(400).json({ ok: false, error: 'Scores incohérents : vainqueur indéterminable' });
 
     const jA = await findByName('juniors', joueurA);
     const jB = await findByName('juniors', joueurB);
@@ -276,11 +298,12 @@ app.post('/admin/cleanup-hashes', async (req, res) => {
 // Édition d'un match ADULTE (admin) : le serveur recalcule les points.
 app.post('/admin/edit-match', async (req, res) => {
   try {
-    const { adminCode, matchId, winner, scores } = req.body || {};
+    const { adminCode, matchId, scores } = req.body || {};
     if (!(await adminCodeIsValid(adminCode))) return res.status(403).json({ ok: false, error: 'Code admin invalide' });
-    if (winner !== 'A' && winner !== 'B') return res.status(400).json({ ok: false, error: 'Vainqueur invalide' });
     const sc = cleanScores(scores);
     if (!sc) return res.status(400).json({ ok: false, error: 'Scores invalides' });
+    const winner = deriveWinner(sc);
+    if (!winner) return res.status(400).json({ ok: false, error: 'Scores incohérents : vainqueur indéterminable' });
     const ref = db.collection('matches').doc(String(matchId));
     const snap = await ref.get();
     if (!snap.exists) return res.status(400).json({ ok: false, error: 'Match introuvable' });
@@ -300,11 +323,12 @@ app.post('/admin/edit-match', async (req, res) => {
 // Édition d'un match JUNIOR (admin).
 app.post('/admin/edit-jmatch', async (req, res) => {
   try {
-    const { adminCode, matchId, winner, scores } = req.body || {};
+    const { adminCode, matchId, scores } = req.body || {};
     if (!(await adminCodeIsValid(adminCode))) return res.status(403).json({ ok: false, error: 'Code admin invalide' });
-    if (winner !== 'A' && winner !== 'B') return res.status(400).json({ ok: false, error: 'Vainqueur invalide' });
     const sc = cleanScores(scores);
     if (!sc) return res.status(400).json({ ok: false, error: 'Scores invalides' });
+    const winner = deriveWinner(sc);
+    if (!winner) return res.status(400).json({ ok: false, error: 'Scores incohérents : vainqueur indéterminable' });
     const ref = db.collection('juniors_matches').doc(String(matchId));
     const snap = await ref.get();
     if (!snap.exists) return res.status(400).json({ ok: false, error: 'Match introuvable' });

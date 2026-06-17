@@ -146,11 +146,15 @@
     }
 
     function toggleSet3() {
+      // conserve les scores déjà saisis avant de reconstruire les cases
+      const saved = {};
+      document.querySelectorAll('#setsWrap input').forEach(el => { saved[el.id] = el.value; });
       has3 = !has3;
       document.getElementById('add3').textContent = has3
         ? '− Retirer le 3ème set'
         : '+ Ajouter un 3ème set (super tie-break)';
       renderSets();
+      for (const id in saved) { const el = document.getElementById(id); if (el) el.value = saved[id]; }
       update();
     }
 
