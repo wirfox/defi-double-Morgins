@@ -900,6 +900,29 @@
       font-variant-numeric: tabular-nums;
     }
 
+    /* ===== Saisie des scores : une case par équipe, vainqueur déduit ===== */
+    .score-set { margin-bottom: 1rem; }
+    .score-set .form-label { margin-bottom: 0.45rem; }
+    .score-line {
+      display: flex; align-items: center; justify-content: space-between; gap: 0.6rem;
+      border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 0.5rem 0.7rem; margin-bottom: 0.4rem; background: var(--bg);
+      transition: var(--transition);
+    }
+    .score-line .nm { font-size: 0.98rem; font-weight: 600; color: var(--text-dark); }
+    .score-line input {
+      width: 60px; height: 44px; flex: 0 0 auto; text-align: center;
+      font-size: 1.2rem; font-weight: 700; font-variant-numeric: tabular-nums;
+      border: 2px solid var(--border); border-radius: var(--radius);
+      color: var(--text-dark); background: #fff;
+    }
+    .score-line input:focus { outline: none; border-color: var(--primary); }
+    .score-line.win { border-color: #86EFAC; background: var(--green-bg); }
+    .score-line.win input { border-color: var(--green); }
+    .score-note { border-radius: var(--radius); padding: 0.7rem 0.85rem; font-size: 0.92rem; margin-top: 0.3rem; line-height: 1.5; }
+    .score-note.warn { background: var(--red-bg); color: var(--red); }
+    .score-note.info { background: var(--primary-light); color: var(--primary-dark); }
+
     /* ===== Admin ===== */
     .footer-admin {
       background: none;
@@ -1522,39 +1545,15 @@
         <div class="card step-card hidden" id="step-3">
           <div class="card-title">Étape 3 — Score du match</div>
 
-          <!-- Qui a gagné -->
-          <div class="form-group" style="margin-bottom: 1.1rem;">
-            <label class="form-label" style="margin-bottom: 0.45rem;">Qui a gagné ?</label>
-            <div class="radio-group" id="winnerRadios">
-              <label class="radio-label">
-                <input type="radio" name="winnerR" value="A" onchange="renderResultPreview()">
-                <span class="team-badge badge-a" style="width:15px;height:15px;font-size:0.6rem;">A</span>
-                <span id="winnerLabelA">Équipe A</span>
-              </label>
-              <label class="radio-label">
-                <input type="radio" name="winnerR" value="B" onchange="renderResultPreview()">
-                <span class="team-badge badge-b" style="width:15px;height:15px;font-size:0.6rem;">B</span>
-                <span id="winnerLabelB">Équipe B</span>
-              </label>
-            </div>
-          </div>
+          <p style="margin-bottom:0.9rem;color:var(--text-light);font-size:0.92rem;line-height:1.5;">
+            Entrez les jeux de chaque équipe, set par set. <strong>Le vainqueur est calculé automatiquement.</strong>
+          </p>
 
-          <!-- Scores set par set -->
-          <div class="form-group" style="margin-bottom: 0.9rem;">
-            <label class="form-label">Set 1</label>
-            <input type="text" class="form-input score-input" id="score1" placeholder="ex. 6-3" maxlength="5">
-          </div>
-          <div class="form-group" style="margin-bottom: 0.9rem;">
-            <label class="form-label">Set 2</label>
-            <input type="text" class="form-input score-input" id="score2" placeholder="ex. 7-5" maxlength="5">
-          </div>
+          <!-- Cases de score (2 par set) générées par JS avec les noms d'équipes -->
+          <div id="scoreSets"></div>
 
           <!-- Set 3 (optionnel — super tie-break) -->
           <button class="ghost-btn" id="addSet3Btn" onclick="toggleSet3()" type="button">+ Ajouter un 3ème set (super tie-break)</button>
-          <div class="form-group hidden" id="score3Wrap" style="margin-top: 0.9rem;">
-            <label class="form-label">Set 3 <span style="color:var(--text-light);font-weight:400;">(super tie-break)</span></label>
-            <input type="text" class="form-input score-input" id="score3" placeholder="ex. 10-7" maxlength="5" oninput="renderResultPreview()">
-          </div>
 
           <!-- Aperçu du calcul -->
           <div id="resultPreview" style="margin-top: 1.2rem;"></div>
@@ -1834,34 +1833,14 @@
             <div><strong>Catégorie verte impliquée</strong> — Ce match doit se jouer avec des <strong>balles vertes</strong>.</div>
           </div>
 
-          <div class="form-group" style="margin-bottom:1.1rem;">
-            <label class="form-label" style="margin-bottom:0.45rem;">Qui a gagné ?</label>
-            <div class="radio-group" id="jwinnerRadios">
-              <label class="radio-label">
-                <input type="radio" name="jwinnerR" value="A" onchange="renderJResultPreview()">
-                <span id="jwinnerLabelA">Joueur A</span>
-              </label>
-              <label class="radio-label">
-                <input type="radio" name="jwinnerR" value="B" onchange="renderJResultPreview()">
-                <span id="jwinnerLabelB">Joueur B</span>
-              </label>
-            </div>
-          </div>
+          <p style="margin-bottom:0.9rem;color:var(--text-light);font-size:0.92rem;line-height:1.5;">
+            Entrez les jeux de chaque joueur, set par set. <strong>Le vainqueur est calculé automatiquement.</strong>
+          </p>
 
-          <div class="form-group" style="margin-bottom:0.9rem;">
-            <label class="form-label">Set 1 <span style="color:var(--text-light);font-weight:400;">(short set à 4 jeux)</span></label>
-            <input type="text" class="form-input score-input" id="jscore1" placeholder="ex. 4-2" maxlength="5">
-          </div>
-          <div class="form-group" style="margin-bottom:0.9rem;">
-            <label class="form-label">Set 2 <span style="color:var(--text-light);font-weight:400;">(short set à 4 jeux)</span></label>
-            <input type="text" class="form-input score-input" id="jscore2" placeholder="ex. 4-3" maxlength="5">
-          </div>
+          <!-- Cases de score (2 par set) générées par JS avec les noms des joueurs -->
+          <div id="jscoreSets"></div>
 
           <button class="ghost-btn" id="jaddSet3Btn" onclick="toggleJSet3()" type="button">+ Ajouter un 3ème set (tie-break)</button>
-          <div class="form-group hidden" id="jscore3Wrap" style="margin-top:0.9rem;">
-            <label class="form-label">Set 3 <span style="color:var(--text-light);font-weight:400;">(tie-break)</span></label>
-            <input type="text" class="form-input score-input" id="jscore3" placeholder="ex. 7-5" maxlength="5" oninput="renderJResultPreview()">
-          </div>
 
           <div id="jresultPreview" style="margin-top:1.2rem;"></div>
 
@@ -2248,6 +2227,103 @@
           <div class="result-pts-label">${emoji} ${label}</div>
           <div class="result-pts-sub">${sub}</div>
         </div>`;
+    }
+
+    // Comme teamResult mais affiche le NOM de l'équipe (plus parlant à la saisie).
+    function teamResultNamed(name, delta, isWinner, sub) {
+      const cls = isWinner ? 'win' : 'lose';
+      const emoji = isWinner ? '🏆' : '🥈';
+      const label = isWinner ? 'Vainqueur' : 'Perdant';
+      return `
+        <div class="result-team ${cls}">
+          <div class="result-team-name">${escapeHtml(name)}</div>
+          <div class="result-pts">+${delta}</div>
+          <div class="result-pts-label">${emoji} ${label}</div>
+          <div class="result-pts-sub">${sub}</div>
+        </div>`;
+    }
+
+    /* ============================================================
+       SAISIE DES SCORES — vainqueur déduit automatiquement
+       Une case de jeux par équipe (avec son nom). Le vainqueur n'est
+       plus choisi à la main : il est calculé à partir des sets gagnés,
+       ce qui rend impossible une saisie « à l'envers ».
+    ============================================================ */
+    // Déduit le vainqueur ('A'/'B') à partir des paires de jeux saisies.
+    // pairs : [{a,b}, ...] (chaînes). Renvoie {ok, winner, threeSet} ou {ok:false, error}.
+    function deriveWinnerFromPairs(pairs) {
+      let setsA = 0, setsB = 0, entered = 0;
+      for (const p of pairs) {
+        const aEmpty = p.a === '' || p.a == null;
+        const bEmpty = p.b === '' || p.b == null;
+        if (aEmpty && bEmpty) continue;            // set non rempli → ignoré
+        if (aEmpty || bEmpty) return { ok: false, error: 'incomplete' };
+        const a = Number(p.a), b = Number(p.b);
+        if (!Number.isInteger(a) || !Number.isInteger(b) || a < 0 || b < 0)
+          return { ok: false, error: 'incomplete' };
+        entered++;
+        if (a === b) return { ok: false, error: 'tie' };
+        if (a > b) setsA++; else setsB++;
+      }
+      if (entered < 2) return { ok: false, error: 'incomplete' };
+      if (setsA === setsB) return { ok: false, error: 'equal' };
+      return { ok: true, winner: setsA > setsB ? 'A' : 'B', threeSet: entered === 3 };
+    }
+    const SCORE_ERR = {
+      incomplete: 'Renseigne les jeux des deux côtés pour chaque set joué.',
+      tie:        'Un set ne peut pas finir à égalité. Corrige les scores.',
+      equal:      'Égalité (1 set partout) : ajoute le 3ᵉ set pour départager.'
+    };
+
+    // Construit le HTML des sets (2 cases par set, étiquetées avec les noms).
+    // prefix : préfixe unique des id (ex. 'r', 'j', 'e', 'ej').
+    function buildScoreSets(prefix, nameA, nameB, vals, has3, oninput, set3Hint, setHint) {
+      const line = (idx, side, name) => {
+        const v = (vals[idx] && vals[idx][side] != null) ? vals[idx][side] : '';
+        return `<div class="score-line" id="${prefix}line${idx}${side}">
+            <span class="nm">${escapeHtml(name)}</span>
+            <input type="number" inputmode="numeric" min="0" max="99" id="${prefix}${idx}${side}"
+                   value="${escapeHtml(String(v))}" oninput="${oninput}" placeholder="–">
+          </div>`;
+      };
+      const set = (idx, hint) => `<div class="score-set">
+          <div class="form-label">Set ${idx}${hint ? ` <span style="color:var(--text-light);font-weight:400;">${hint}</span>` : ''}</div>
+          ${line(idx, 'a', nameA)}${line(idx, 'b', nameB)}
+        </div>`;
+      let html = set(1, setHint || '') + set(2, setHint || '');
+      if (has3) html += set(3, set3Hint || '');
+      return html;
+    }
+
+    // Relit les valeurs saisies dans le DOM.
+    function readScoreSets(prefix, has3) {
+      const g = id => { const el = $(id); return el ? el.value.trim() : ''; };
+      const vals = { 1: { a: g(prefix + '1a'), b: g(prefix + '1b') },
+                     2: { a: g(prefix + '2a'), b: g(prefix + '2b') } };
+      if (has3) vals[3] = { a: g(prefix + '3a'), b: g(prefix + '3b') };
+      return vals;
+    }
+
+    // Met en vert la ligne gagnante de chaque set.
+    function paintWinningLines(prefix, has3) {
+      const idxs = has3 ? [1, 2, 3] : [1, 2];
+      for (const idx of idxs) {
+        const la = $(prefix + 'line' + idx + 'a'), lb = $(prefix + 'line' + idx + 'b');
+        if (!la || !lb) continue;
+        la.classList.remove('win'); lb.classList.remove('win');
+        const av = ($(prefix + idx + 'a') || {}).value, bv = ($(prefix + idx + 'b') || {}).value;
+        if (av != null && bv != null && av.trim() !== '' && bv.trim() !== ''
+            && !isNaN(+av) && !isNaN(+bv) && +av !== +bv) {
+          (+av > +bv ? la : lb).classList.add('win');
+        }
+      }
+    }
+
+    // Construit l'objet scores {set1:'a-b', ...} à partir des paires (pour l'envoi serveur).
+    function pairsToScores(vals, has3) {
+      const out = { set1: `${vals[1].a}-${vals[1].b}`, set2: `${vals[2].a}-${vals[2].b}` };
+      if (has3 && vals[3] && vals[3].a !== '' && vals[3].b !== '') out.set3 = `${vals[3].a}-${vals[3].b}`;
+      return out;
     }
 
     /* ============================================================
@@ -2710,21 +2786,21 @@
     }
 
     function resetResultForm() {
-      state.result = { teamA:null, pinAok:false, teamB:null, pinBok:false, winner:null, has3sets:false };
-      ['selectA','selectB','pinA','pinB','score1','score2','score3']
-        .forEach(id => { const el = $(id); if (el) el.value = ''; });
+      state.result = { teamA:null, pinAok:false, teamB:null, pinBok:false, winner:null, has3:false,
+                       scores:{ 1:{a:'',b:''}, 2:{a:'',b:''}, 3:{a:'',b:''} } };
+      ['selectA','selectB','pinA','pinB'].forEach(id => { const el = $(id); if (el) el.value = ''; });
       $('pinStatusA').innerHTML = ''; $('pinStatusA').className = 'pin-status';
       $('pinStatusB').innerHTML = ''; $('pinStatusB').className = 'pin-status';
       $('pinErrorA').textContent = '';
       $('pinErrorB').textContent = '';
       $('step-2').classList.add('hidden');
       $('step-3').classList.add('hidden');
-      $('score3Wrap').classList.add('hidden');
       $('addSet3Btn').classList.remove('active');
+      $('addSet3Btn').textContent = '+ Ajouter un 3ème set (super tie-break)';
+      $('scoreSets').innerHTML = '';
       $('resultPreview').innerHTML = '';
       $('saveStatus').className = 'save-status';
       $('saveStatus').textContent = '';
-      document.querySelectorAll('input[name="winnerR"]').forEach(r => r.checked = false);
       updateStepIndicator();
     }
 
@@ -2793,9 +2869,6 @@
       $('pinStatusB').innerHTML = ''; $('pinStatusB').className = 'pin-status';
       $('pinErrorB').textContent = '';
       $('step-3').classList.add('hidden');
-      // Mettre à jour labels équipes dans step 3
-      $('winnerLabelA').textContent = state.result.teamA || 'Équipe A';
-      $('winnerLabelB').textContent = state.result.teamB || 'Équipe B';
       updateStepIndicator();
     }
 
@@ -2814,8 +2887,8 @@
         $('pinStatusB').className = 'pin-status ok';
         $('pinStatusB').innerHTML = '✓';
         $('step-3').classList.remove('hidden');
-        $('winnerLabelA').textContent = state.result.teamA;
-        $('winnerLabelB').textContent = state.result.teamB;
+        renderScoreSets();
+        renderResultPreview();
       } else {
         state.result.pinBok = false;
         $('pinStatusB').className = 'pin-status error';
@@ -2852,40 +2925,65 @@
       return checkPinStatus('team', teamName, pin);
     }
 
+    // Affiche les cases de score (2 par set) avec les noms des équipes.
+    function renderScoreSets() {
+      $('scoreSets').innerHTML = buildScoreSets('r',
+        state.result.teamA || 'Équipe A', state.result.teamB || 'Équipe B',
+        state.result.scores, state.result.has3, 'onScoreInput()', '(super tie-break)');
+      paintWinningLines('r', state.result.has3);
+    }
+
+    function onScoreInput() {
+      state.result.scores = { ...state.result.scores, ...readScoreSets('r', state.result.has3) };
+      paintWinningLines('r', state.result.has3);
+      renderResultPreview();
+    }
+
     function toggleSet3() {
-      const wrap = $('score3Wrap');
-      const open = wrap.classList.contains('hidden');
-      wrap.classList.toggle('hidden', !open);
-      $('addSet3Btn').classList.toggle('active', open);
-      if (!open) { $('score3').value = ''; }
+      // mémorise d'abord ce qui est déjà saisi (sinon on perdrait les scores)
+      state.result.scores = { ...state.result.scores, ...readScoreSets('r', state.result.has3) };
+      state.result.has3 = !state.result.has3;
+      const btn = $('addSet3Btn');
+      btn.classList.toggle('active', state.result.has3);
+      btn.textContent = state.result.has3 ? '− Retirer le 3ème set' : '+ Ajouter un 3ème set (super tie-break)';
+      renderScoreSets();
       renderResultPreview();
     }
 
     function renderResultPreview() {
-      const winnerR = document.querySelector('input[name="winnerR"]:checked');
+      const out = $('resultPreview');
       const tA = state.teamsLive.find(t => t.name === state.result.teamA);
       const tB = state.teamsLive.find(t => t.name === state.result.teamB);
-      if (!winnerR || !tA || !tB) { $('resultPreview').innerHTML = ''; return; }
+      if (!tA || !tB) { out.innerHTML = ''; return; }
 
-      const winner   = winnerR.value;
-      const threeSet = !$('score3Wrap').classList.contains('hidden') && $('score3').value.trim() !== '';
-      state.result.winner = winner;
-      state.result.has3sets = threeSet;
+      const pairs = [state.result.scores[1], state.result.scores[2]];
+      if (state.result.has3) pairs.push(state.result.scores[3]);
+      const res = deriveWinnerFromPairs(pairs);
 
-      const calc = computePoints(tA.cote, tB.cote, winner, threeSet);
-      const winnerName = winner === 'A' ? tA.name : tB.name;
+      if (!res.ok) {
+        const anything = pairs.some(p => (p.a !== '' && p.a != null) || (p.b !== '' && p.b != null));
+        out.innerHTML = anything
+          ? `<div class="score-note ${res.error === 'tie' ? 'warn' : 'info'}">${res.error === 'tie' ? '⚠️ ' : ''}${SCORE_ERR[res.error]}</div>`
+          : '';
+        return;
+      }
 
-      $('resultPreview').innerHTML = `
+      state.result.winner = res.winner;
+      state.result.has3sets = res.threeSet;
+      const calc = computePoints(tA.cote, tB.cote, res.winner, res.threeSet);
+      const winnerName = res.winner === 'A' ? tA.name : tB.name;
+
+      out.innerHTML = `
         <div class="winner-banner">
           <span class="winner-icon">🏆</span>
           <div class="winner-text">
-            <div class="winner-label">Vainqueur</div>
+            <div class="winner-label">Vainqueur (calculé automatiquement)</div>
             <div class="winner-name">${escapeHtml(winnerName)}</div>
           </div>
         </div>
         <div class="result-grid">
-          ${teamResult('A', calc.deltaA, winner === 'A', winner === 'A' ? calc.subWinner : calc.subLoser)}
-          ${teamResult('B', calc.deltaB, winner === 'B', winner === 'B' ? calc.subWinner : calc.subLoser)}
+          ${teamResultNamed(tA.name, calc.deltaA, res.winner === 'A', res.winner === 'A' ? calc.subWinner : calc.subLoser)}
+          ${teamResultNamed(tB.name, calc.deltaB, res.winner === 'B', res.winner === 'B' ? calc.subWinner : calc.subLoser)}
         </div>
       `;
     }
@@ -2917,13 +3015,12 @@
       if (!state.result.pinAok || !state.result.pinBok) {
         status.className = 'save-status error'; status.textContent = 'Les deux PINs doivent être validés.'; return;
       }
-      const winnerR = document.querySelector('input[name="winnerR"]:checked');
-      if (!winnerR) { status.className = 'save-status error'; status.textContent = 'Sélectionne le vainqueur.'; return; }
 
-      const s1 = $('score1').value.trim();
-      const s2 = $('score2').value.trim();
-      const s3 = $('score3Wrap').classList.contains('hidden') ? '' : $('score3').value.trim();
-      if (!s1 || !s2) { status.className = 'save-status error'; status.textContent = 'Renseigne au moins les deux premiers sets.'; return; }
+      state.result.scores = { ...state.result.scores, ...readScoreSets('r', state.result.has3) };
+      const pairs = [state.result.scores[1], state.result.scores[2]];
+      if (state.result.has3) pairs.push(state.result.scores[3]);
+      const res = deriveWinnerFromPairs(pairs);
+      if (!res.ok) { status.className = 'save-status error'; status.textContent = SCORE_ERR[res.error]; return; }
       if (!firebaseReady) { status.className = 'save-status error'; status.textContent = 'Firebase non configuré.'; return; }
 
       $('saveBtn').disabled = true;
@@ -2931,18 +3028,17 @@
 
       const tA = state.teamsLive.find(t => t.name === state.result.teamA);
       const tB = state.teamsLive.find(t => t.name === state.result.teamB);
-      const threeSet = !!s3;
-      const calc = computePoints(tA.cote, tB.cote, winnerR.value, threeSet);
+      const scores = pairsToScores(state.result.scores, state.result.has3);
 
       try {
-        // Le serveur (Pi) vérifie les 2 PINs, calcule les points lui-même et
-        // écrit le match. Le navigateur n'écrit plus rien dans Firestore :
-        // impossible de forger un match ou de gonfler les points.
+        // Le serveur (Pi) vérifie les 2 PINs, REDÉDUIT le vainqueur des scores,
+        // calcule les points lui-même et écrit le match. Impossible de forger
+        // un match, de gonfler les points, ni d'entrer un score « à l'envers ».
         const r = await piPost('/submit-match', {
           teamA: tA.name, pinA: $('pinA').value,
           teamB: tB.name, pinB: $('pinB').value,
-          winner: winnerR.value,
-          scores: { set1: s1, set2: s2, ...(s3 ? { set3: s3 } : {}) }
+          winner: res.winner,
+          scores
         });
 
         status.className = 'save-status ok';
@@ -3306,10 +3402,63 @@
     // ─── Modale édition d'un match ───
     let editingMatchId = null;
 
+    // État partagé des modales d'édition (adulte + junior), même UI que la saisie.
+    let editScores = { 1:{a:'',b:''}, 2:{a:'',b:''}, 3:{a:'',b:''} };
+    let editHas3 = false, editNameA = '', editNameB = '', editKind = 'team';
+
+    function parsePair(str) {
+      const m = String(str || '').split('-');
+      return { a: (m[0] || '').trim(), b: (m[1] || '').trim() };
+    }
+    function initEditScores(m, kind) {
+      editKind = kind;
+      const s1 = m.scores?.set1 || (m.score || '');
+      const s2 = m.scores?.set2 || '';
+      const s3 = m.scores?.set3 || '';
+      editScores = { 1: parsePair(s1), 2: parsePair(s2), 3: parsePair(s3) };
+      editHas3 = !!s3;
+    }
+    function renderEditScoreSets() {
+      const hint  = editKind === 'junior' ? '(short set à 4 jeux)' : '';
+      const hint3 = editKind === 'junior' ? '(tie-break)' : '(super tie-break)';
+      $('editScoreSets').innerHTML = buildScoreSets('e', editNameA, editNameB, editScores, editHas3, 'onEditScoreInput()', hint3, hint);
+      paintWinningLines('e', editHas3);
+    }
+    function onEditScoreInput() {
+      editScores = { ...editScores, ...readScoreSets('e', editHas3) };
+      paintWinningLines('e', editHas3);
+      renderEditPreview();
+    }
+    function toggleEditSet3() {
+      editScores = { ...editScores, ...readScoreSets('e', editHas3) };
+      editHas3 = !editHas3;
+      const lbl3 = editKind === 'junior' ? '(tie-break)' : '(super tie-break)';
+      $('editAddSet3Btn').textContent = editHas3 ? '− Retirer le 3ème set' : `+ Ajouter un 3ème set ${lbl3}`;
+      renderEditScoreSets();
+      renderEditPreview();
+    }
+    function renderEditPreview() {
+      const out = $('editPreview');
+      const btn = $(editKind === 'junior' ? 'saveJEditBtn' : 'saveEditBtn');
+      const pairs = [editScores[1], editScores[2]];
+      if (editHas3) pairs.push(editScores[3]);
+      const res = deriveWinnerFromPairs(pairs);
+      if (!res.ok) {
+        out.innerHTML = `<div class="score-note ${res.error === 'tie' ? 'warn' : 'info'}">${res.error === 'tie' ? '⚠️ ' : ''}${SCORE_ERR[res.error]}</div>`;
+        if (btn) btn.disabled = true;
+        return;
+      }
+      const winnerName = res.winner === 'A' ? editNameA : editNameB;
+      out.innerHTML = `<div class="winner-banner"><span class="winner-icon">🏆</span><div class="winner-text"><div class="winner-label">Vainqueur (calculé automatiquement)</div><div class="winner-name">${escapeHtml(winnerName)}</div></div></div>`;
+      if (btn) btn.disabled = false;
+    }
+
     function openEditMatch(id) {
       const m = state.matchesLive.find(x => x.id === id);
       if (!m) return;
       editingMatchId = id;
+      editNameA = m.equipeA; editNameB = m.equipeB;
+      initEditScores(m, 'team');
 
       const body = $('editMatchBody');
       body.innerHTML = `
@@ -3319,32 +3468,14 @@
           <strong>${escapeHtml(m.equipeB)}</strong>
         </div>
 
-        <div class="form-group" style="margin-bottom: 1.1rem;">
-          <label class="form-label" style="margin-bottom: 0.45rem;">Vainqueur</label>
-          <div class="radio-group">
-            <label class="radio-label">
-              <input type="radio" name="editWinner" value="A" ${m.vainqueur === 'A' ? 'checked' : ''}>
-              ${escapeHtml(m.equipeA)}
-            </label>
-            <label class="radio-label">
-              <input type="radio" name="editWinner" value="B" ${m.vainqueur === 'B' ? 'checked' : ''}>
-              ${escapeHtml(m.equipeB)}
-            </label>
-          </div>
-        </div>
+        <p style="margin:0.6rem 0 0.9rem;color:var(--text-light);font-size:0.9rem;line-height:1.5;">
+          Modifiez les jeux de chaque équipe. <strong>Le vainqueur est recalculé automatiquement.</strong>
+        </p>
 
-        <div class="form-group" style="margin-bottom: 0.9rem;">
-          <label class="form-label">Set 1</label>
-          <input type="text" class="form-input score-input" id="editScore1" value="${escapeHtml(m.scores?.set1 || '')}" maxlength="5">
-        </div>
-        <div class="form-group" style="margin-bottom: 0.9rem;">
-          <label class="form-label">Set 2</label>
-          <input type="text" class="form-input score-input" id="editScore2" value="${escapeHtml(m.scores?.set2 || '')}" maxlength="5">
-        </div>
-        <div class="form-group" style="margin-bottom: 0.4rem;">
-          <label class="form-label">Set 3 <span style="color:var(--text-light);font-weight:400;">(super tie-break, laisser vide si match en 2 sets)</span></label>
-          <input type="text" class="form-input score-input" id="editScore3" value="${escapeHtml(m.scores?.set3 || '')}" maxlength="5" placeholder="ex. 10-7">
-        </div>
+        <div id="editScoreSets"></div>
+        <button class="ghost-btn" id="editAddSet3Btn" onclick="toggleEditSet3()" type="button"></button>
+
+        <div id="editPreview" style="margin-top:1rem;"></div>
 
         <div style="font-size:0.78rem;color:var(--text-light);padding:0.7rem 0.85rem;background:var(--primary-light);border-radius:var(--radius);margin-top:0.8rem;line-height:1.5;">
           ℹ️ En sauvegardant, les points du match sont recalculés et le classement se met à jour automatiquement.
@@ -3357,6 +3488,9 @@
         <div id="editStatus" class="save-status"></div>
       `;
 
+      $('editAddSet3Btn').textContent = editHas3 ? '− Retirer le 3ème set' : '+ Ajouter un 3ème set (super tie-break)';
+      renderEditScoreSets();
+      renderEditPreview();
       $('editModal').classList.remove('hidden');
     }
 
@@ -3375,25 +3509,24 @@
       const status = $('editStatus');
       status.className = 'save-status'; status.textContent = '';
 
-      const newWinner = document.querySelector('input[name="editWinner"]:checked')?.value;
-      const s1 = $('editScore1').value.trim();
-      const s2 = $('editScore2').value.trim();
-      const s3 = $('editScore3').value.trim();
+      editScores = { ...editScores, ...readScoreSets('e', editHas3) };
+      const pairs = [editScores[1], editScores[2]];
+      if (editHas3) pairs.push(editScores[3]);
+      const res = deriveWinnerFromPairs(pairs);
+      if (!res.ok) { status.className = 'save-status error'; status.textContent = SCORE_ERR[res.error]; return; }
 
-      if (!newWinner) { status.className = 'save-status error'; status.textContent = 'Sélectionne le vainqueur.'; return; }
-      if (!s1 || !s2) { status.className = 'save-status error'; status.textContent = 'Sets 1 et 2 requis.'; return; }
-
+      const scores = pairsToScores(editScores, editHas3);
       $('saveEditBtn').disabled = true;
       status.textContent = 'Enregistrement…';
 
       try {
-        // L'édition passe par le serveur (Pi) : il recalcule les points lui-même
-        // (le navigateur ne peut plus modifier un match directement).
+        // L'édition passe par le serveur (Pi) : il REDÉDUIT le vainqueur des
+        // scores et recalcule les points (le navigateur ne modifie rien directement).
         await piPost('/admin/edit-match', {
           adminCode: state.adminCode,
           matchId: editingMatchId,
-          winner: newWinner,
-          scores: { set1: s1, set2: s2, ...(s3 ? { set3: s3 } : {}) }
+          winner: res.winner,
+          scores
         });
 
         status.className = 'save-status ok';
@@ -3804,30 +3937,45 @@
     }
 
     function resetJResultForm() {
-      state.jResult = { joueurA:null, pinAok:false, joueurB:null, pinBok:false, winner:null };
-      ['jselectA','jselectB','jpinA','jpinB','jscore1','jscore2','jscore3'].forEach(id => { const el = $(id); if (el) el.value = ''; });
+      state.jResult = { joueurA:null, pinAok:false, joueurB:null, pinBok:false, winner:null, has3:false,
+                        scores:{ 1:{a:'',b:''}, 2:{a:'',b:''}, 3:{a:'',b:''} } };
+      ['jselectA','jselectB','jpinA','jpinB'].forEach(id => { const el = $(id); if (el) el.value = ''; });
       $('jpinStatusA').innerHTML = ''; $('jpinStatusA').className = 'pin-status';
       $('jpinStatusB').innerHTML = ''; $('jpinStatusB').className = 'pin-status';
       $('jpinErrorA').textContent = '';
       $('jpinErrorB').textContent = '';
       $('jstep-2').classList.add('hidden');
       $('jstep-3').classList.add('hidden');
-      $('jscore3Wrap').classList.add('hidden');
       $('jaddSet3Btn').classList.remove('active');
+      $('jaddSet3Btn').textContent = '+ Ajouter un 3ème set (tie-break)';
+      $('jscoreSets').innerHTML = '';
       $('jgreenBallsBanner').classList.add('hidden');
       $('jresultPreview').innerHTML = '';
       $('jsaveStatus').className = 'save-status';
       $('jsaveStatus').textContent = '';
-      document.querySelectorAll('input[name="jwinnerR"]').forEach(r => r.checked = false);
       updateJStepIndicator();
     }
 
+    function renderJScoreSets() {
+      $('jscoreSets').innerHTML = buildScoreSets('j',
+        state.jResult.joueurA || 'Joueur A', state.jResult.joueurB || 'Joueur B',
+        state.jResult.scores, state.jResult.has3, 'onJScoreInput()', '(tie-break)', '(short set à 4 jeux)');
+      paintWinningLines('j', state.jResult.has3);
+    }
+
+    function onJScoreInput() {
+      state.jResult.scores = { ...state.jResult.scores, ...readScoreSets('j', state.jResult.has3) };
+      paintWinningLines('j', state.jResult.has3);
+      renderJResultPreview();
+    }
+
     function toggleJSet3() {
-      const wrap = $('jscore3Wrap');
-      const open = wrap.classList.contains('hidden');
-      wrap.classList.toggle('hidden', !open);
-      $('jaddSet3Btn').classList.toggle('active', open);
-      if (!open) { $('jscore3').value = ''; }
+      state.jResult.scores = { ...state.jResult.scores, ...readScoreSets('j', state.jResult.has3) };
+      state.jResult.has3 = !state.jResult.has3;
+      const btn = $('jaddSet3Btn');
+      btn.classList.toggle('active', state.jResult.has3);
+      btn.textContent = state.jResult.has3 ? '− Retirer le 3ème set' : '+ Ajouter un 3ème set (tie-break)';
+      renderJScoreSets();
       renderJResultPreview();
     }
 
@@ -3892,8 +4040,6 @@
       $('jpinStatusB').innerHTML = ''; $('jpinStatusB').className = 'pin-status';
       $('jpinErrorB').textContent = '';
       $('jstep-3').classList.add('hidden');
-      $('jwinnerLabelA').textContent = state.jResult.joueurA || 'Joueur A';
-      $('jwinnerLabelB').textContent = state.jResult.joueurB || 'Joueur B';
       updateJStepIndicator();
     }
 
@@ -3910,8 +4056,8 @@
         state.jResult.pinBok = true;
         $('jpinStatusB').className = 'pin-status ok'; $('jpinStatusB').innerHTML = '✓';
         $('jstep-3').classList.remove('hidden');
-        $('jwinnerLabelA').textContent = state.jResult.joueurA;
-        $('jwinnerLabelB').textContent = state.jResult.joueurB;
+        renderJScoreSets();
+        renderJResultPreview();
         // Alerte balles vertes
         const jA = state.juniorsLive.find(j => j.name === state.jResult.joueurA);
         const jB = state.juniorsLive.find(j => j.name === state.jResult.joueurB);
@@ -3934,29 +4080,41 @@
     }
 
     function renderJResultPreview() {
-      const winnerR = document.querySelector('input[name="jwinnerR"]:checked');
-      if (!winnerR) { $('jresultPreview').innerHTML = ''; return; }
-      const winner = winnerR.value;
-      const winnerName = winner === 'A' ? state.jResult.joueurA : state.jResult.joueurB;
+      const out = $('jresultPreview');
+      if (!state.jResult.joueurA || !state.jResult.joueurB) { out.innerHTML = ''; return; }
 
-      $('jresultPreview').innerHTML = `
+      const pairs = [state.jResult.scores[1], state.jResult.scores[2]];
+      if (state.jResult.has3) pairs.push(state.jResult.scores[3]);
+      const res = deriveWinnerFromPairs(pairs);
+
+      if (!res.ok) {
+        const anything = pairs.some(p => (p.a !== '' && p.a != null) || (p.b !== '' && p.b != null));
+        out.innerHTML = anything
+          ? `<div class="score-note ${res.error === 'tie' ? 'warn' : 'info'}">${res.error === 'tie' ? '⚠️ ' : ''}${SCORE_ERR[res.error]}</div>`
+          : '';
+        return;
+      }
+
+      state.jResult.winner = res.winner;
+      const winnerName = res.winner === 'A' ? state.jResult.joueurA : state.jResult.joueurB;
+      out.innerHTML = `
         <div class="winner-banner">
           <span class="winner-icon">🏆</span>
           <div class="winner-text">
-            <div class="winner-label">Vainqueur</div>
+            <div class="winner-label">Vainqueur (calculé automatiquement)</div>
             <div class="winner-name">${escapeHtml(winnerName)}</div>
           </div>
         </div>
         <div class="result-grid">
-          <div class="result-team ${winner === 'A' ? 'win' : 'lose'}">
+          <div class="result-team ${res.winner === 'A' ? 'win' : 'lose'}">
             <div class="result-team-name">${escapeHtml(state.jResult.joueurA)}</div>
-            <div class="result-pts">+${winner === 'A' ? 2 : 1}⭐</div>
-            <div class="result-pts-label">${winner === 'A' ? '🏆 Vainqueur' : '🥈 Perdant'}</div>
+            <div class="result-pts">+${res.winner === 'A' ? 2 : 1}⭐</div>
+            <div class="result-pts-label">${res.winner === 'A' ? '🏆 Vainqueur' : '🥈 Perdant'}</div>
           </div>
-          <div class="result-team ${winner === 'B' ? 'win' : 'lose'}">
+          <div class="result-team ${res.winner === 'B' ? 'win' : 'lose'}">
             <div class="result-team-name">${escapeHtml(state.jResult.joueurB)}</div>
-            <div class="result-pts">+${winner === 'B' ? 2 : 1}⭐</div>
-            <div class="result-pts-label">${winner === 'B' ? '🏆 Vainqueur' : '🥈 Perdant'}</div>
+            <div class="result-pts">+${res.winner === 'B' ? 2 : 1}⭐</div>
+            <div class="result-pts-label">${res.winner === 'B' ? '🏆 Vainqueur' : '🥈 Perdant'}</div>
           </div>
         </div>`;
     }
@@ -3968,32 +4126,29 @@
       if (!state.jResult.pinAok || !state.jResult.pinBok) {
         status.className = 'save-status error'; status.textContent = 'Les deux PINs doivent être validés.'; return;
       }
-      const winnerR = document.querySelector('input[name="jwinnerR"]:checked');
-      if (!winnerR) { status.className = 'save-status error'; status.textContent = 'Sélectionne le vainqueur.'; return; }
-      const s1 = $('jscore1').value.trim();
-      const s2 = $('jscore2').value.trim();
-      const s3 = $('jscore3Wrap').classList.contains('hidden') ? '' : $('jscore3').value.trim();
-      if (!s1 || !s2) { status.className = 'save-status error'; status.textContent = 'Sets 1 et 2 requis.'; return; }
+
+      state.jResult.scores = { ...state.jResult.scores, ...readScoreSets('j', state.jResult.has3) };
+      const pairs = [state.jResult.scores[1], state.jResult.scores[2]];
+      if (state.jResult.has3) pairs.push(state.jResult.scores[3]);
+      const res = deriveWinnerFromPairs(pairs);
+      if (!res.ok) { status.className = 'save-status error'; status.textContent = SCORE_ERR[res.error]; return; }
       if (!firebaseReady) { status.className = 'save-status error'; status.textContent = 'Firebase non configuré.'; return; }
 
       $('jsaveBtn').disabled = true;
       status.textContent = 'Enregistrement…';
 
-      const winner = winnerR.value;
       const jA = state.juniorsLive.find(j => j.name === state.jResult.joueurA);
       const jB = state.juniorsLive.find(j => j.name === state.jResult.joueurB);
-      const starsA = winner === 'A' ? 2 : 1;
-      const starsB = winner === 'B' ? 2 : 1;
-      const greenBalls = !!((jA && jA.green) || (jB && jB.green));
+      const scores = pairsToScores(state.jResult.scores, state.jResult.has3);
 
       try {
-        // Le serveur (Pi) vérifie les 2 PINs, calcule les étoiles + balles vertes
-        // et écrit le match. Le navigateur n'écrit plus rien.
+        // Le serveur (Pi) vérifie les 2 PINs, REDÉDUIT le vainqueur des scores,
+        // calcule les étoiles + balles vertes et écrit le match.
         const r = await piPost('/submit-jmatch', {
           joueurA: jA.name, pinA: $('jpinA').value,
           joueurB: jB.name, pinB: $('jpinB').value,
-          winner: winner,
-          scores: { set1: s1, set2: s2, ...(s3 ? { set3: s3 } : {}) }
+          winner: res.winner,
+          scores
         });
 
         status.className = 'save-status ok';
@@ -4208,13 +4363,10 @@
       const m = state.juniorsMatchesLive.find(x => x.id === id);
       if (!m) return;
       editingJMatchId = id;
+      editNameA = m.joueurA; editNameB = m.joueurB;
+      initEditScores(m, 'junior');
 
       const body = $('editMatchBody');
-      // Backward-compat : ancien format avec un seul "score"
-      const s1Val = m.scores?.set1 || (m.score || '');
-      const s2Val = m.scores?.set2 || '';
-      const s3Val = m.scores?.set3 || '';
-
       body.innerHTML = `
         <div class="modal-teams-header">
           <strong>${escapeHtml(m.joueurA)}</strong>
@@ -4223,32 +4375,14 @@
           ${m.greenBalls ? '<div style="font-size:0.78rem;color:#166534;margin-top:0.4rem;">🟢 balles vertes</div>' : ''}
         </div>
 
-        <div class="form-group" style="margin-bottom:1.1rem;">
-          <label class="form-label" style="margin-bottom:0.45rem;">Vainqueur</label>
-          <div class="radio-group">
-            <label class="radio-label">
-              <input type="radio" name="editJWinner" value="A" ${m.vainqueur === 'A' ? 'checked' : ''}>
-              ${escapeHtml(m.joueurA)}
-            </label>
-            <label class="radio-label">
-              <input type="radio" name="editJWinner" value="B" ${m.vainqueur === 'B' ? 'checked' : ''}>
-              ${escapeHtml(m.joueurB)}
-            </label>
-          </div>
-        </div>
+        <p style="margin:0.6rem 0 0.9rem;color:var(--text-light);font-size:0.9rem;line-height:1.5;">
+          Modifiez les jeux de chaque joueur. <strong>Le vainqueur est recalculé automatiquement.</strong>
+        </p>
 
-        <div class="form-group" style="margin-bottom:0.9rem;">
-          <label class="form-label">Set 1 <span style="color:var(--text-light);font-weight:400;">(short set à 4 jeux)</span></label>
-          <input type="text" class="form-input score-input" id="editJScore1" value="${escapeHtml(s1Val)}" maxlength="5" placeholder="ex. 4-2">
-        </div>
-        <div class="form-group" style="margin-bottom:0.9rem;">
-          <label class="form-label">Set 2 <span style="color:var(--text-light);font-weight:400;">(short set à 4 jeux)</span></label>
-          <input type="text" class="form-input score-input" id="editJScore2" value="${escapeHtml(s2Val)}" maxlength="5" placeholder="ex. 4-3">
-        </div>
-        <div class="form-group" style="margin-bottom:0.4rem;">
-          <label class="form-label">Set 3 <span style="color:var(--text-light);font-weight:400;">(tie-break, laisser vide si match en 2 sets)</span></label>
-          <input type="text" class="form-input score-input" id="editJScore3" value="${escapeHtml(s3Val)}" maxlength="5" placeholder="ex. 7-5">
-        </div>
+        <div id="editScoreSets"></div>
+        <button class="ghost-btn" id="editAddSet3Btn" onclick="toggleEditSet3()" type="button"></button>
+
+        <div id="editPreview" style="margin-top:1rem;"></div>
 
         <div style="font-size:0.78rem;color:var(--text-light);padding:0.7rem 0.85rem;background:var(--primary-light);border-radius:var(--radius);margin-top:0.8rem;line-height:1.5;">
           ℹ️ En sauvegardant, les étoiles du match sont recalculées (vainqueur +2⭐, perdant +1⭐) et le classement se met à jour automatiquement.
@@ -4261,6 +4395,9 @@
         <div id="editJStatus" class="save-status"></div>
       `;
 
+      $('editAddSet3Btn').textContent = editHas3 ? '− Retirer le 3ème set' : '+ Ajouter un 3ème set (tie-break)';
+      renderEditScoreSets();
+      renderEditPreview();
       $('editModal').classList.remove('hidden');
     }
 
@@ -4269,24 +4406,23 @@
       const status = $('editJStatus');
       status.className = 'save-status'; status.textContent = '';
 
-      const newWinner = document.querySelector('input[name="editJWinner"]:checked')?.value;
-      const s1 = $('editJScore1').value.trim();
-      const s2 = $('editJScore2').value.trim();
-      const s3 = $('editJScore3').value.trim();
+      editScores = { ...editScores, ...readScoreSets('e', editHas3) };
+      const pairs = [editScores[1], editScores[2]];
+      if (editHas3) pairs.push(editScores[3]);
+      const res = deriveWinnerFromPairs(pairs);
+      if (!res.ok) { status.className = 'save-status error'; status.textContent = SCORE_ERR[res.error]; return; }
 
-      if (!newWinner) { status.className = 'save-status error'; status.textContent = 'Sélectionne le vainqueur.'; return; }
-      if (!s1 || !s2) { status.className = 'save-status error'; status.textContent = 'Sets 1 et 2 requis.'; return; }
-
+      const scores = pairsToScores(editScores, editHas3);
       $('saveJEditBtn').disabled = true;
       status.textContent = 'Enregistrement…';
 
       try {
-        // L'édition passe par le serveur (Pi), qui recalcule les étoiles.
+        // L'édition passe par le serveur (Pi), qui redéduit le vainqueur et recalcule les étoiles.
         await piPost('/admin/edit-jmatch', {
           adminCode: state.adminCode,
           matchId: editingJMatchId,
-          winner: newWinner,
-          scores: { set1: s1, set2: s2, ...(s3 ? { set3: s3 } : {}) }
+          winner: res.winner,
+          scores
         });
 
         status.className = 'save-status ok';
