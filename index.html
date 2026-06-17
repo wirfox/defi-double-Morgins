@@ -1259,6 +1259,7 @@
       background: var(--navy); color: #fff; font-weight: 700;
       display: flex; align-items: center; justify-content: center; font-size: 0.9rem; margin-top: 1px;
     }
+    .aide-steps li .txt { flex: 1 1 auto; min-width: 0; }
     .aide-shot { margin: 0.9rem 0 0.4rem; }
     .aide-shot img {
       width: 100%; border-radius: var(--radius-lg);
@@ -1931,9 +1932,9 @@
           <p><strong>À quoi ça sert :</strong> savoir à l'avance combien de points rapporterait un match,
              <em>sans rien enregistrer</em>. Pratique pour se faire une idée avant de jouer.</p>
           <ul class="aide-steps">
-            <li><span class="num">1</span> Entrez la <strong>cote</strong> de votre équipe et celle de l'équipe adverse.</li>
-            <li><span class="num">2</span> Choisissez qui gagne (et s'il y a eu un 3ᵉ set).</li>
-            <li><span class="num">3</span> L'app affiche les points gagnés par chaque équipe. C'est juste une simulation.</li>
+            <li><span class="num">1</span><span class="txt">Entrez la <strong>cote</strong> de votre équipe et celle de l'équipe adverse.</span></li>
+            <li><span class="num">2</span><span class="txt">Choisissez qui gagne (et s'il y a eu un 3ᵉ set).</span></li>
+            <li><span class="num">3</span><span class="txt">L'app affiche les points gagnés par chaque équipe. C'est juste une simulation.</span></li>
           </ul>
           <div class="aide-shot" id="shot-calc">
             <img src="aide/calculatrice.jpeg" alt="Onglet Calculatrice — simulateur de match" loading="lazy">
@@ -1966,9 +1967,9 @@
           <p><strong>À quoi ça sert :</strong> enregistrer le résultat d'un match. Pour que ce soit sécurisé,
              il faut le <strong>code PIN</strong> (4 chiffres) des <strong>deux équipes</strong>. Ça se fait en 3 étapes :</p>
           <ul class="aide-steps">
-            <li><span class="num">1</span> Choisissez <strong>votre équipe</strong>, puis tapez <strong>votre code PIN</strong>. Un ✓ vert apparaît si c'est bon.</li>
-            <li><span class="num">2</span> Choisissez l'<strong>équipe adverse</strong>, et <strong>votre adversaire tape SON code PIN</strong>.</li>
-            <li><span class="num">3</span> Entrez le <strong>score</strong>, désignez le <strong>vainqueur</strong>, puis validez. C'est enregistré !</li>
+            <li><span class="num">1</span><span class="txt">Choisissez <strong>votre équipe</strong>, puis tapez <strong>votre code PIN</strong>. Un ✓ vert apparaît si c'est bon.</span></li>
+            <li><span class="num">2</span><span class="txt">Choisissez l'<strong>équipe adverse</strong>, et <strong>votre adversaire tape SON code PIN</strong>.</span></li>
+            <li><span class="num">3</span><span class="txt">Entrez le <strong>score</strong>, désignez le <strong>vainqueur</strong>, puis validez. C'est enregistré !</span></li>
           </ul>
           <div class="aide-note">🔑 Le code PIN est le code secret à 4 chiffres que vous avez <strong>reçu par message</strong>.
              Chaque équipe a le sien ; il évite que quelqu'un enregistre un résultat à votre place.</div>
@@ -1996,9 +1997,9 @@
           <h2>6 · Le circuit Junior</h2>
           <p>Le tournoi <strong>Junior</strong> fonctionne pareil, avec quelques différences :</p>
           <ul class="aide-steps">
-            <li><span class="num">★</span> Le classement se fait en <strong>étoiles</strong> : <strong>+2 ⭐</strong> pour le vainqueur, <strong>+1 ⭐</strong> pour le perdant.</li>
-            <li><span class="num">🟢</span> Certains joueurs jouent avec des <strong>balles vertes</strong> : l'app vous prévient si c'est le cas.</li>
-            <li><span class="num">=</span> Les onglets <strong>Joueurs</strong>, <strong>Saisie</strong> et <strong>Matchs</strong> marchent comme côté adulte.</li>
+            <li><span class="num">★</span><span class="txt">Le classement se fait en <strong>étoiles</strong> : <strong>+2 ⭐</strong> pour le vainqueur, <strong>+1 ⭐</strong> pour le perdant.</span></li>
+            <li><span class="num">🟢</span><span class="txt">Certains joueurs jouent avec des <strong>balles vertes</strong> : l'app vous prévient si c'est le cas.</span></li>
+            <li><span class="num">=</span><span class="txt">Les onglets <strong>Joueurs</strong>, <strong>Saisie</strong> et <strong>Matchs</strong> marchent comme côté adulte.</span></li>
           </ul>
           <div class="aide-shot" id="shot-jjoueurs">
             <div class="ph">📷<br>Capture à venir<br><small>(Junior — onglet Joueurs)</small></div>
