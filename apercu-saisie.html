@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Aperçu — Nouvelle saisie des scores</title>
+  <style>
+    :root {
+      --primary:#E8720C; --primary-dark:#C45C00; --primary-light:#FFF4EC; --primary-100:#FFE4CC;
+      --navy:#1E293B; --text:#334155; --text-light:#64748B; --text-dark:#0F172A;
+      --border:#E2E8F0; --bg:#F8FAFC; --white:#FFFFFF;
+      --green:#16A34A; --green-bg:#DCFCE7; --red:#DC2626; --red-bg:#FEE2E2;
+      --radius:8px; --radius-lg:12px;
+      --font:-apple-system,BlinkMacSystemFont,"Segoe UI","Helvetica Neue",Helvetica,Arial,sans-serif;
+      --shadow-sm:0 1px 2px rgba(0,0,0,0.05);
+      --shadow-md:0 4px 6px rgba(0,0,0,0.06),0 2px 4px rgba(0,0,0,0.04);
+    }
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:var(--font);color:var(--text);background:var(--bg);line-height:1.6;padding:1rem;max-width:560px;margin:0 auto;}
+    .demo-flag{background:var(--navy);color:#fff;border-radius:var(--radius-lg);padding:0.8rem 1rem;font-size:0.9rem;margin-bottom:1rem;}
+    .demo-flag b{color:#FDBA74;}
+    .card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.2rem;box-shadow:var(--shadow-sm);margin-bottom:1rem;}
+    .card-title{font-size:0.78rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:var(--primary);margin-bottom:1rem;}
+    .matchup{font-size:1.05rem;font-weight:600;color:var(--text-dark);margin-bottom:0.2rem;}
+    .matchup .vs{color:var(--text-light);font-weight:400;margin:0 0.3rem;}
+    .cote{font-size:0.85rem;color:var(--text-light);margin-bottom:0.2rem;}
+
+    .set-block{margin-bottom:1rem;}
+    .set-label{font-size:0.95rem;font-weight:600;color:var(--text-dark);margin-bottom:0.45rem;}
+    .set-label .hint{font-weight:400;color:var(--text-light);font-size:0.82rem;}
+    .score-row{display:flex;align-items:center;justify-content:space-between;gap:0.6rem;
+      border:1px solid var(--border);border-radius:var(--radius);padding:0.55rem 0.7rem;margin-bottom:0.4rem;background:var(--bg);}
+    .score-row .nm{font-size:0.98rem;font-weight:600;color:var(--text-dark);}
+    .score-row input{width:64px;height:46px;text-align:center;font-size:1.25rem;font-weight:700;
+      border:2px solid var(--border);border-radius:var(--radius);color:var(--text-dark);background:#fff;}
+    .score-row input:focus{outline:none;border-color:var(--primary);}
+    .score-row.win{border-color:var(--green);background:var(--green-bg);}
+    .score-row.win input{border-color:var(--green);}
+
+    .ghost-btn{width:100%;border:1.5px dashed var(--primary);color:var(--primary-dark);background:#fff;
+      border-radius:var(--radius);padding:0.7rem;font-weight:600;cursor:pointer;font-size:0.95rem;margin-top:0.3rem;}
+    .ghost-btn:hover{background:var(--primary-light);}
+
+    .note{border-radius:var(--radius);padding:0.7rem 0.85rem;font-size:0.92rem;margin-top:0.9rem;}
+    .note.warn{background:var(--red-bg);color:var(--red);}
+    .note.info{background:var(--primary-light);color:var(--primary-dark);}
+
+    .winner-banner{display:flex;align-items:center;gap:0.7rem;background:var(--green-bg);border-radius:var(--radius-lg);padding:0.8rem 1rem;margin-top:1rem;}
+    .winner-banner .ic{font-size:1.6rem;}
+    .winner-banner .lab{font-size:0.72rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--green);}
+    .winner-banner .nm{font-size:1.05rem;font-weight:700;color:var(--text-dark);}
+
+    .result-grid{display:grid;grid-template-columns:1fr 1fr;gap:0.7rem;margin-top:0.7rem;}
+    .res-card{border-radius:var(--radius-lg);padding:0.9rem;text-align:center;border:1px solid var(--border);}
+    .res-card.win{background:var(--green-bg);border-color:#86EFAC;}
+    .res-card.lose{background:var(--primary-light);border-color:var(--primary-100);}
+    .res-card .who{font-size:0.78rem;font-weight:600;color:var(--text);margin-bottom:0.25rem;min-height:2.2em;display:flex;align-items:center;justify-content:center;}
+    .res-card .pts{font-size:1.7rem;font-weight:800;color:var(--text-dark);}
+    .res-card .sub{font-size:0.75rem;color:var(--text-light);margin-top:0.2rem;}
+
+    .save-btn{width:100%;background:var(--primary);color:#fff;border:none;border-radius:var(--radius-lg);
+      padding:0.95rem;font-size:1.05rem;font-weight:700;cursor:pointer;margin-top:1rem;}
+    .save-btn:disabled{background:#CBD5E1;cursor:not-allowed;}
+    .save-status{margin-top:0.7rem;font-size:0.92rem;font-weight:600;text-align:center;min-height:1.2em;}
+    .save-status.ok{color:var(--green);} .save-status.err{color:var(--red);}
+  </style>
+</head>
+<body>
+  <div class="demo-flag">
+    🔍 <b>Aperçu</b> — ceci est une page de démonstration. Elle ne modifie pas l'application
+    et n'enregistre rien. Teste la nouvelle saisie : tu tapes juste les jeux de chaque équipe,
+    et <b>le vainqueur est calculé tout seul</b>.
+  </div>
+
+  <div class="card">
+    <div class="card-title">Étape 3 — Score du match</div>
+    <div class="matchup" id="matchup"></div>
+    <div class="cote" id="cote"></div>
+
+    <div id="setsWrap" style="margin-top:1rem;"></div>
+
+    <button class="ghost-btn" id="add3" onclick="toggleSet3()">+ Ajouter un 3ème set (super tie-break)</button>
+
+    <div id="feedback"></div>
+
+    <button class="save-btn" id="saveBtn" onclick="fakeSave()" disabled>Confirmer et enregistrer</button>
+    <div class="save-status" id="status"></div>
+  </div>
+
+  <script>
+    // ---- Exemple (mêmes données que ta capture) ----
+    const TEAM_A = { name: "Maël Gabin / Arnaud Gabin", cote: 12 };
+    const TEAM_B = { name: "Olivier Coulombe / Michele Francesco", cote: 16 };
+
+    let has3 = false;
+
+    // ---- Calcul des points : IDENTIQUE à l'application ----
+    function computePoints(coteA, coteB, winner, threeSet) {
+      const coteW = winner === 'A' ? coteA : coteB;
+      const coteL = winner === 'A' ? coteB : coteA;
+      const gainW = coteL;
+      let participation;
+      if      (coteW >  coteL)  participation = 3;
+      else if (coteW === coteL) participation = 2;
+      else                      participation = 1;
+      const gainL = participation + (threeSet ? 1 : 0);
+      return {
+        deltaA: winner === 'A' ? gainW : gainL,
+        deltaB: winner === 'B' ? gainW : gainL,
+        subWinner: `cote adverse (${coteL} pt${coteL > 1 ? 's' : ''})`,
+        subLoser: threeSet ? `participation +${participation} · 3 sets +1` : `participation +${participation}`
+      };
+    }
+
+    function setRow(setIdx, side, team) {
+      return `
+        <div class="score-row" id="row-${setIdx}-${side}">
+          <span class="nm">${team.name}</span>
+          <input type="number" inputmode="numeric" min="0" max="99" id="s${setIdx}${side}"
+                 oninput="update()" placeholder="–">
+        </div>`;
+    }
+
+    function renderSets() {
+      const wrap = document.getElementById('setsWrap');
+      let html = `
+        <div class="set-block">
+          <div class="set-label">Set 1</div>
+          ${setRow(1,'A',TEAM_A)}
+          ${setRow(1,'B',TEAM_B)}
+        </div>
+        <div class="set-block">
+          <div class="set-label">Set 2</div>
+          ${setRow(2,'A',TEAM_A)}
+          ${setRow(2,'B',TEAM_B)}
+        </div>`;
+      if (has3) {
+        html += `
+        <div class="set-block">
+          <div class="set-label">Set 3 <span class="hint">(super tie-break)</span></div>
+          ${setRow(3,'A',TEAM_A)}
+          ${setRow(3,'B',TEAM_B)}
+        </div>`;
+      }
+      wrap.innerHTML = html;
+    }
+
+    function toggleSet3() {
+      has3 = !has3;
+      document.getElementById('add3').textContent = has3
+        ? '− Retirer le 3ème set'
+        : '+ Ajouter un 3ème set (super tie-break)';
+      renderSets();
+      update();
+    }
+
+    function val(id) {
+      const el = document.getElementById(id);
+      if (!el || el.value.trim() === '') return null;
+      const n = parseInt(el.value, 10);
+      return Number.isInteger(n) ? n : NaN;
+    }
+
+    // Renvoie l'état des sets + le vainqueur déduit
+    function analyze() {
+      const sets = [{a:val('s1A'),b:val('s1B')},{a:val('s2A'),b:val('s2B')}];
+      if (has3) sets.push({a:val('s3A'),b:val('s3B')});
+
+      let setsA = 0, setsB = 0, tie = false, incomplete = false;
+      let entered = 0;
+      for (const s of sets) {
+        if (s.a === null && s.b === null) { incomplete = true; continue; }
+        if (s.a === null || s.b === null || isNaN(s.a) || isNaN(s.b)) { incomplete = true; continue; }
+        entered++;
+        if (s.a === s.b) { tie = true; continue; }
+        if (s.a > s.b) setsA++; else setsB++;
+      }
+      return { sets, setsA, setsB, tie, incomplete, entered };
+    }
+
+    function update() {
+      const fb = document.getElementById('feedback');
+      const saveBtn = document.getElementById('saveBtn');
+      const r = analyze();
+
+      // colore les lignes gagnantes par set
+      function paint(setIdx) {
+        const a = val('s'+setIdx+'A'), b = val('s'+setIdx+'B');
+        const rowA = document.getElementById('row-'+setIdx+'-A');
+        const rowB = document.getElementById('row-'+setIdx+'-B');
+        if (!rowA || !rowB) return;
+        rowA.classList.remove('win'); rowB.classList.remove('win');
+        if (a!==null && b!==null && !isNaN(a) && !isNaN(b) && a!==b) {
+          (a>b?rowA:rowB).classList.add('win');
+        }
+      }
+      [1,2].forEach(paint); if (has3) paint(3);
+
+      saveBtn.disabled = true;
+
+      if (r.tie) {
+        fb.innerHTML = `<div class="note warn">⚠️ Un set ne peut pas finir à égalité (ex. 6-6). Corrige les scores.</div>`;
+        return;
+      }
+      if (r.incomplete || r.entered < 2) {
+        fb.innerHTML = `<div class="note info">Renseigne les jeux des deux équipes pour chaque set.</div>`;
+        return;
+      }
+      if (r.setsA === r.setsB) {
+        fb.innerHTML = `<div class="note info">Égalité ${r.setsA}–${r.setsB} : ajoute le 3ème set pour départager.</div>`;
+        return;
+      }
+
+      const winner = r.setsA > r.setsB ? 'A' : 'B';
+      const winnerName = winner === 'A' ? TEAM_A.name : TEAM_B.name;
+      const threeSet = r.entered === 3;
+      const calc = computePoints(TEAM_A.cote, TEAM_B.cote, winner, threeSet);
+
+      fb.innerHTML = `
+        <div class="winner-banner">
+          <span class="ic">🏆</span>
+          <div>
+            <div class="lab">Vainqueur (calculé automatiquement)</div>
+            <div class="nm">${winnerName}</div>
+          </div>
+        </div>
+        <div class="result-grid">
+          <div class="res-card ${winner==='A'?'win':'lose'}">
+            <div class="who">${TEAM_A.name}</div>
+            <div class="pts">+${calc.deltaA}</div>
+            <div class="sub">${winner==='A'?calc.subWinner:calc.subLoser}</div>
+          </div>
+          <div class="res-card ${winner==='B'?'win':'lose'}">
+            <div class="who">${TEAM_B.name}</div>
+            <div class="pts">+${calc.deltaB}</div>
+            <div class="sub">${winner==='B'?calc.subWinner:calc.subLoser}</div>
+          </div>
+        </div>`;
+      saveBtn.disabled = false;
+    }
+
+    function fakeSave() {
+      const st = document.getElementById('status');
+      st.className = 'save-status ok';
+      st.textContent = '✓ (Aperçu) Le match serait enregistré avec le vainqueur calculé ci-dessus.';
+    }
+
+    // init
+    document.getElementById('matchup').innerHTML =
+      `${TEAM_A.name}<span class="vs">vs</span>${TEAM_B.name}`;
+    document.getElementById('cote').textContent =
+      `Cotes : ${TEAM_A.name} = ${TEAM_A.cote} · ${TEAM_B.name} = ${TEAM_B.cote}`;
+    renderSets();
+    update();
+  </script>
+</body>
+</html>
