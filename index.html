@@ -1700,32 +1700,6 @@
             <div class="card-title">Matchs juniors enregistrés</div>
             <div id="adminJMatchesList"><!-- Rempli par JS --></div>
           </div>
-
-          <!-- Zone dangereuse — Défi Double (Adulte) -->
-          <div class="card danger-card">
-            <div class="card-title danger-title">⚠️ Reset Défi Double (Adulte)</div>
-            <div style="font-size:0.82rem;color:var(--text-light);margin-bottom:0.9rem;line-height:1.5;">
-              Supprime <strong>tous les matchs du tournoi adulte</strong> et remet <strong>tous les compteurs de points à 0</strong>.
-              Les équipes et leurs codes PIN restent inchangés. Le tournoi <strong>junior n'est PAS touché</strong>.
-            </div>
-            <button class="btn-danger" onclick="resetTournament()" id="resetBtn">
-              Réinitialiser le Défi Double
-            </button>
-            <div id="resetStatus" class="save-status"></div>
-          </div>
-
-          <!-- Zone dangereuse — Défi Junior -->
-          <div class="card danger-card">
-            <div class="card-title danger-title">⚠️ Reset Défi Junior</div>
-            <div style="font-size:0.82rem;color:var(--text-light);margin-bottom:0.9rem;line-height:1.5;">
-              Supprime <strong>tous les matchs juniors</strong> et remet <strong>tous les compteurs d'étoiles à 0</strong>.
-              Les joueurs et leurs codes PIN restent inchangés. Le tournoi <strong>adulte n'est PAS touché</strong>.
-            </div>
-            <button class="btn-danger" onclick="resetJuniorTournament()" id="resetJBtn">
-              Réinitialiser le Défi Junior
-            </button>
-            <div id="resetJStatus" class="save-status"></div>
-          </div>
         </div>
       </div><!-- /screen-admin -->
 
@@ -3539,70 +3513,6 @@
         status.textContent = 'Erreur : ' + e.message;
       } finally {
         $('saveEditBtn').disabled = false;
-      }
-    }
-
-    // ─── Reset Défi Double (adulte) ───
-    async function resetTournament() {
-      if (!firebaseReady) { alert('Firebase non configuré.'); return; }
-      const ok1 = confirm('⚠️ DÉFI DOUBLE (Adulte)\n\nSupprimer TOUS les matchs adultes et remettre les compteurs de points à 0 ?\n\nLes équipes et leurs PINs sont conservés. Le tournoi junior n\'est PAS touché.');
-      if (!ok1) return;
-      const ok2 = confirm('Cette action est irréversible. Confirmer le reset du Défi Double ?');
-      if (!ok2) return;
-
-      const btn = $('resetBtn');
-      const status = $('resetStatus');
-      btn.disabled = true;
-      status.className = 'save-status';
-      status.textContent = 'Réinitialisation Défi Double en cours…';
-
-      try {
-        const matchesSnap = await db.collection('matches').get();
-        const batch1 = db.batch();
-        matchesSnap.docs.forEach(d => batch1.delete(d.ref));
-        if (matchesSnap.size > 0) await batch1.commit();
-
-        // Le classement étant déduit des matchs, les supprimer remet tout à 0.
-        status.className = 'save-status ok';
-        status.innerHTML = `✓ Défi Double remis à zéro · ${matchesSnap.size} matchs supprimés`;
-      } catch (e) {
-        console.error(e);
-        status.className = 'save-status error';
-        status.textContent = 'Erreur : ' + e.message;
-      } finally {
-        btn.disabled = false;
-      }
-    }
-
-    // ─── Reset Défi Junior ───
-    async function resetJuniorTournament() {
-      if (!firebaseReady) { alert('Firebase non configuré.'); return; }
-      const ok1 = confirm('⚠️ DÉFI JUNIOR\n\nSupprimer TOUS les matchs juniors et remettre les compteurs d\'étoiles à 0 ?\n\nLes joueurs et leurs PINs sont conservés. Le tournoi adulte n\'est PAS touché.');
-      if (!ok1) return;
-      const ok2 = confirm('Cette action est irréversible. Confirmer le reset du Défi Junior ?');
-      if (!ok2) return;
-
-      const btn = $('resetJBtn');
-      const status = $('resetJStatus');
-      btn.disabled = true;
-      status.className = 'save-status';
-      status.textContent = 'Réinitialisation Défi Junior en cours…';
-
-      try {
-        const matchesSnap = await db.collection('juniors_matches').get();
-        const batch1 = db.batch();
-        matchesSnap.docs.forEach(d => batch1.delete(d.ref));
-        if (matchesSnap.size > 0) await batch1.commit();
-
-        // Le classement étant déduit des matchs, les supprimer remet tout à 0.
-        status.className = 'save-status ok';
-        status.innerHTML = `✓ Défi Junior remis à zéro · ${matchesSnap.size} matchs supprimés`;
-      } catch (e) {
-        console.error(e);
-        status.className = 'save-status error';
-        status.textContent = 'Erreur : ' + e.message;
-      } finally {
-        btn.disabled = false;
       }
     }
 
