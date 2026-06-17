@@ -1402,7 +1402,7 @@
               <label class="radio-label">
                 <input type="radio" name="sets" value="yes">
                 <span class="radio-dot"></span>
-                Oui — défaite 2-1
+                Oui — 2-1
               </label>
               <label class="radio-label">
                 <input type="radio" name="sets" value="no" checked>
@@ -3627,6 +3627,64 @@
       const losses = myMatches.filter(m => !((m.joueurA === name && m.vainqueur === 'A') || (m.joueurB === name && m.vainqueur === 'B')));
       const winRate = myMatches.length ? Math.round(wins.length / myMatches.length * 100) : 0;
 
+      // Moyenne d'étoiles par match
+      const avgStars = myMatches.length
+        ? Math.round((starsMap[name] || 0) / myMatches.length * 10) / 10
+        : 0;
+
+      // Série en cours (matchs triés du + récent au + ancien)
+      let streak = 0, streakType = '';
+      for (const m of myMatches) {
+        const won = (m.joueurA === name && m.vainqueur === 'A') || (m.joueurB === name && m.vainqueur === 'B');
+        if (streak === 0) { streak = 1; streakType = won ? 'V' : 'D'; }
+        else if ((won && streakType === 'V') || (!won && streakType === 'D')) streak++;
+        else break;
+      }
+      const streakTxt = streak === 0 ? '—'
+        : `${streak} ${streakType === 'V' ? 'victoire' : 'défaite'}${streak > 1 ? 's' : ''} consécutive${streak > 1 ? 's' : ''}`;
+
+      // Meilleure victoire (par étoiles gagnées)
+      const bestWin = wins.reduce((best, m) => {
+        const st = num(m.joueurA === name ? m.starsA : m.starsB);
+        return (!best || st > best.st) ? { match: m, st } : best;
+      }, null);
+      const bestWinTxt = bestWin
+        ? `+${bestWin.st}⭐ vs ${escapeHtml(bestWin.match.joueurA === name ? bestWin.match.joueurB : bestWin.match.joueurA)}`
+        : '—';
+
+      // Matchs en 3 sets
+      const threeSetMatches = myMatches.filter(m => m.scores && m.scores.set3);
+      const threeSetCount = threeSetMatches.length;
+
+      // Match le plus serré (même logique que côté adulte) :
+      //   - priorité aux 3 sets (plus petit écart sur le tie-break du set 3)
+      //   - sinon, plus petit écart total sur set1+set2
+      const twoSetMatches = myMatches.filter(m => m.scores && !m.scores.set3);
+      let closest = null;
+      if (threeSetMatches.length > 0) {
+        closest = threeSetMatches.reduce((best, m) => {
+          const [a, b] = (m.scores.set3 || '').split('-').map(Number);
+          if (isNaN(a) || isNaN(b)) return best;
+          const diff = Math.abs(a - b);
+          return (!best || diff < best.diff) ? { match: m, diff } : best;
+        }, null);
+      } else if (twoSetMatches.length > 0) {
+        closest = twoSetMatches.reduce((best, m) => {
+          let totalDiff = 0, valid = false;
+          ['set1','set2'].forEach(k => {
+            if (m.scores[k]) {
+              const [a, b] = m.scores[k].split('-').map(Number);
+              if (!isNaN(a) && !isNaN(b)) { totalDiff += Math.abs(a - b); valid = true; }
+            }
+          });
+          if (!valid) return best;
+          return (!best || totalDiff < best.diff) ? { match: m, diff: totalDiff } : best;
+        }, null);
+      }
+      const closestTxt = closest
+        ? `vs ${escapeHtml(closest.match.joueurA === name ? closest.match.joueurB : closest.match.joueurA)}`
+        : '—';
+
       const total = wins.length + losses.length;
       const winPct = total ? (wins.length / total) * 100 : 0;
 
@@ -3657,12 +3715,32 @@
             <div class="stat-value">${myMatches.length}</div>
           </div>
           <div class="stat-card">
-            <div class="stat-label">V / D</div>
+            <div class="stat-label">Victoires</div>
             <div class="stat-value">${wins.length}V — ${losses.length}D</div>
           </div>
-          <div class="stat-card wide">
+          <div class="stat-card">
             <div class="stat-label">Taux de victoire</div>
             <div class="stat-value">${winRate}%</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Moyenne / match</div>
+            <div class="stat-value">${avgStars} ⭐</div>
+          </div>
+          <div class="stat-card wide">
+            <div class="stat-label">Série en cours</div>
+            <div class="stat-value">${streakTxt}</div>
+          </div>
+          <div class="stat-card wide">
+            <div class="stat-label">Meilleure victoire</div>
+            <div class="stat-value">${bestWinTxt}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Matchs en 3 sets</div>
+            <div class="stat-value">${threeSetCount}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Match le plus serré</div>
+            <div class="stat-value" style="font-size:0.82rem">${closestTxt}</div>
           </div>
         </div>
 
