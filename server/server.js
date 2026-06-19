@@ -45,7 +45,9 @@ function computePoints(coteA, coteB, winner, threeSet) {
   if (coteW > coteL) participation = 3;
   else if (coteW === coteL) participation = 2;
   else participation = 1;
-  const gainL = participation + (threeSet ? 1 : 0);
+  // Règle B : le perdant ne peut jamais gagner plus que le vainqueur.
+  // Le vainqueur gagne coteL, donc on plafonne le perdant à (coteL - 1).
+  const gainL = Math.max(0, Math.min(participation + (threeSet ? 1 : 0), coteL - 1));
   return {
     deltaA: winner === 'A' ? gainW : gainL,
     deltaB: winner === 'B' ? gainW : gainL,
