@@ -2147,7 +2147,11 @@
       // Bonus 3 sets : +1 pt fixe
       const bonus3sets = threeSet ? 1 : 0;
 
-      const gainL = participation + bonus3sets;
+      const rawLoser = participation + bonus3sets;
+      // Règle B : le perdant ne peut jamais gagner plus que le vainqueur.
+      // Le vainqueur gagne coteL, donc on plafonne le perdant à (coteL - 1).
+      const gainL = Math.max(0, Math.min(rawLoser, coteL - 1));
+      const capped = gainL < rawLoser;
 
       // Deltas finaux par équipe
       const deltaA = (winner === 'A') ? gainW : gainL;
@@ -2155,9 +2159,11 @@
 
       // ---- Affichage résultats ----
       const subWinner = `cote adverse (${coteL} pt${coteL > 1 ? 's' : ''})`;
-      const subLoser  = threeSet
-        ? `participation +${participation} · 3 sets +${bonus3sets}`
-        : `participation +${participation}`;
+      const subLoser  = capped
+        ? `plafonné à ${gainL} pt${gainL > 1 ? 's' : ''} (toujours < vainqueur)`
+        : (threeSet
+            ? `participation +${participation} · 3 sets +${bonus3sets}`
+            : `participation +${participation}`);
 
       document.getElementById('resultGrid').innerHTML =
         teamResult('A', deltaA, winner === 'A', winner === 'A' ? subWinner : subLoser) +
@@ -2167,17 +2173,25 @@
       let html = '';
       const loserTeam = winner === 'A' ? 'B' : 'A';
 
-      html += `<div class="banner banner-yellow">
-        <span class="banner-icon">🎾</span>
-        <div><strong>Équipe ${loserTeam} (perdante) : +${participation}&nbsp;pt${participation > 1 ? 's' : ''} de participation</strong>
-        <br><span style="opacity:.75">${comparaison}</span></div>
-      </div>`;
-
-      if (threeSet) {
-        html += `<div class="banner banner-blue">
-          <span class="banner-icon">🥈</span>
-          <div><strong>Match en 3&nbsp;sets :</strong> +${bonus3sets}&nbsp;pt${bonus3sets > 1 ? 's' : ''} bonus pour l'équipe ${loserTeam}</div>
+      if (capped) {
+        html += `<div class="banner banner-yellow">
+          <span class="banner-icon">🎾</span>
+          <div><strong>Équipe ${loserTeam} (perdante) : +${gainL}&nbsp;pt${gainL > 1 ? 's' : ''}</strong>
+          <br><span style="opacity:.75">plafonné — un perdant ne peut pas gagner plus que le vainqueur</span></div>
         </div>`;
+      } else {
+        html += `<div class="banner banner-yellow">
+          <span class="banner-icon">🎾</span>
+          <div><strong>Équipe ${loserTeam} (perdante) : +${participation}&nbsp;pt${participation > 1 ? 's' : ''} de participation</strong>
+          <br><span style="opacity:.75">${comparaison}</span></div>
+        </div>`;
+
+        if (threeSet) {
+          html += `<div class="banner banner-blue">
+            <span class="banner-icon">🥈</span>
+            <div><strong>Match en 3&nbsp;sets :</strong> +${bonus3sets}&nbsp;pt${bonus3sets > 1 ? 's' : ''} bonus pour l'équipe ${loserTeam}</div>
+          </div>`;
+        }
       }
       document.getElementById('banners').innerHTML = html;
 
@@ -2973,13 +2987,19 @@
       else if (coteW === coteL) { participation = 2; comparaison = 'cotes égales';           }
       else                      { participation = 1; comparaison = 'adversaire plus faible'; }
       const bonus3sets = threeSet ? 1 : 0;
-      const gainL = participation + bonus3sets;
+      const rawLoser = participation + bonus3sets;
+      // Règle B : le perdant ne peut jamais gagner plus que le vainqueur.
+      // Le vainqueur gagne coteL, donc on plafonne le perdant à (coteL - 1).
+      const gainL = Math.max(0, Math.min(rawLoser, coteL - 1));
+      const capped = gainL < rawLoser;
       const deltaA = winner === 'A' ? gainW : gainL;
       const deltaB = winner === 'B' ? gainW : gainL;
       const subWinner = `cote adverse (${coteL} pt${coteL > 1 ? 's' : ''})`;
-      const subLoser  = threeSet
-        ? `participation +${participation} · 3 sets +${bonus3sets}`
-        : `participation +${participation}`;
+      const subLoser  = capped
+        ? `plafonné à ${gainL} pt${gainL > 1 ? 's' : ''} (toujours < vainqueur)`
+        : (threeSet
+            ? `participation +${participation} · 3 sets +${bonus3sets}`
+            : `participation +${participation}`);
       return { deltaA, deltaB, gainW, gainL, participation, bonus3sets, comparaison, subWinner, subLoser };
     }
 
