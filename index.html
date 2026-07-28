@@ -1599,7 +1599,7 @@
           <div id="adminSetup" class="hidden">
             <div style="font-size:0.85rem;color:var(--text-light);margin-bottom:0.9rem;line-height:1.5;">
               <strong style="color:var(--text-dark);">Première utilisation.</strong>
-              Choisis ton code admin (6 à 20 caractères). Le code est hashé (SHA-256) : il n'apparaît jamais dans le code source ni sur GitHub. À toi de bien le retenir.
+              Choisis ton code admin (8 à 20 caractères). Son empreinte est calculée et gardée par le serveur (PBKDF2 salé) : elle n'est jamais lisible depuis le navigateur, ni présente dans le code source. Prends un code long et non devinable — c'est la clé de tout le tournoi.
             </div>
             <div class="form-group" style="margin-bottom: 0.9rem;">
               <label class="form-label">Nouveau code admin</label>
@@ -1618,9 +1618,11 @@
             <div class="form-group">
               <label class="form-label">Code admin</label>
               <input type="password" maxlength="20" class="form-input" id="adminPin"
-                     oninput="onAdminPinInput()" autocomplete="off">
+                     oninput="onAdminPinInput()"
+                     onkeydown="if(event.key==='Enter') submitAdminCode()" autocomplete="off">
               <div class="pin-error" id="adminError"></div>
             </div>
+            <button class="btn-calc" onclick="submitAdminCode()" id="adminLoginBtn">Se connecter</button>
           </div>
         </div>
 
@@ -1654,6 +1656,25 @@
             <button class="btn-calc" onclick="addNewTeam()" id="addTeamBtn">Ajouter l'équipe</button>
             <div id="addTeamStatus" class="save-status"></div>
             <div id="addTeamPin"></div>
+          </div>
+
+          <!-- Changement du code admin -->
+          <div class="card">
+            <div class="card-title">Changer le code admin</div>
+            <div style="font-size:0.82rem;color:var(--text-light);margin-bottom:0.9rem;line-height:1.5;">
+              Les PINs étant chiffrés avec le code admin, ils sont automatiquement
+              rechiffrés avec le nouveau. Ne ferme pas la page pendant l'opération.
+            </div>
+            <div class="form-group" style="margin-bottom:0.7rem;">
+              <label class="form-label">Nouveau code (8 à 20 caractères)</label>
+              <input type="password" maxlength="20" class="form-input" id="changeAdminPin" autocomplete="off">
+            </div>
+            <div class="form-group" style="margin-bottom:0.9rem;">
+              <label class="form-label">Confirmer</label>
+              <input type="password" maxlength="20" class="form-input" id="changeAdminPin2" autocomplete="off">
+            </div>
+            <button class="btn-calc" onclick="changeAdminCode()" id="changeAdminBtn">Changer le code admin</button>
+            <div id="changeAdminStatus" class="save-status"></div>
           </div>
 
           <!-- Gestion des PINs -->
@@ -2073,6 +2094,17 @@
     }
 
     /* ============================================================
+       HELPERS D'AFFICHAGE
+       Déclarés ici (et non plus plus bas) parce que le rendu de la liste des
+       équipes juste en dessous s'exécute immédiatement et les utilise.
+    ============================================================ */
+    const escapeHtml = s => String(s).replace(/[&<>"']/g, c =>
+      ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+    // Coercition numérique sûre : empêche l'injection HTML via un champ numérique
+    // qui aurait été écrit en base sous forme de chaîne (ex. "<img onerror=...>").
+    const num = v => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+
+    /* ============================================================
        LISTE DES ÉQUIPES — propre, blanc & orange
     ============================================================ */
     (function renderTeams() {
@@ -2087,8 +2119,8 @@
         html += `
           <div class="team-row">
             <div class="col-rank">${i + 1}</div>
-            <div class="col-name">${t.name}</div>
-            <div class="col-cote">${t.cote}</div>
+            <div class="col-name">${escapeHtml(t.name)}</div>
+            <div class="col-cote">${num(t.cote)}</div>
           </div>`;
       });
       body.innerHTML = html;
@@ -2375,7 +2407,11 @@
       },
 
       adminUnlocked: false,
-      adminCode:     null
+      // Le code admin reste en mémoire (jamais stocké) : il sert à déchiffrer
+      // les PINs pour l'affichage. Le jeton, lui, authentifie les appels au
+      // serveur — le code ne circule donc plus à chaque requête.
+      adminCode:     null,
+      adminToken:    null
     };
 
     // ─────── SERVEUR PI (validation des PINs + saisie des matchs) ───────
@@ -2411,13 +2447,30 @@
       return data;
     }
 
+    // Appel GET au serveur Pi.
+    async function piGet(path) {
+      if (!PI_URL) throw new Error('Serveur indisponible (URL non configurée). Le Raspberry est-il allumé ?');
+      let res;
+      try {
+        res = await fetch(PI_URL + path);
+      } catch (e) {
+        throw new Error('Serveur injoignable. Vérifie que le Raspberry est allumé et connecté.');
+      }
+      let data = {};
+      try { data = await res.json(); } catch (e) {}
+      if (!res.ok || !data.ok) throw new Error(data.error || ('Erreur serveur (' + res.status + ')'));
+      return data;
+    }
+
+    // Appel admin : joint le jeton de session obtenu à la connexion.
+    function piAdmin(path, body) {
+      return piPost(path, { adminToken: state.adminToken, ...(body || {}) });
+    }
+
     // ─────── HELPERS ───────
+    // (escapeHtml et num sont déclarés plus haut : ils servent dès le rendu
+    //  initial de la liste des équipes.)
     const $ = id => document.getElementById(id);
-    const escapeHtml = s => String(s).replace(/[&<>"']/g, c =>
-      ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
-    // Coercition numérique sûre : empêche l'injection HTML via un champ numérique
-    // qui aurait été écrit en base sous forme de chaîne (ex. "<img onerror=...>").
-    const num = v => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 
     // ─── Points/étoiles DÉRIVÉS de l'historique des matchs ───
     // Les classements ne sont PLUS lus depuis un compteur stocké (teams.points /
@@ -3077,16 +3130,11 @@
         : '<div class="empty-state">Aucun match enregistré pour le moment.</div>';
     }
 
-    // ─────── ADMIN — code hashé (SHA-256) + stocké dans Firestore ───────
-
-    // Hash SHA-256 d'une chaîne, retourne l'hex
-    async function sha256Hex(str) {
-      const enc = new TextEncoder().encode(str);
-      const buf = await crypto.subtle.digest('SHA-256', enc);
-      return Array.from(new Uint8Array(buf))
-        .map(b => b.toString(16).padStart(2, '0'))
-        .join('');
-    }
+    // ─────── ADMIN ───────
+    // Le code admin n'est plus vérifié ici : son empreinte (PBKDF2 salé) est
+    // gardée par le serveur, hors de portée du navigateur. Le code reste
+    // néanmoins en mémoire le temps de la session, car il sert de clé de
+    // (dé)chiffrement des PINs ci-dessous.
 
     // ─── Chiffrement AES-GCM avec clé dérivée du code admin (PBKDF2) ───
     // Sert à chiffrer les PINs des équipes : seul l'admin (qui connaît son code) peut les déchiffrer.
@@ -3131,6 +3179,7 @@
       $('screen-admin').classList.add('active');
       state.adminUnlocked = false;
       state.adminCode = null;  // sécurité : on oublie le code à chaque accès
+      state.adminToken = null;
       $('adminPin').value = '';
       $('newAdminPin').value = '';
       $('newAdminPin2').value = '';
@@ -3147,10 +3196,12 @@
         return;
       }
 
-      // Vérifier si le code admin a déjà été défini
+      // Le serveur dit s'il faut initialiser ou se connecter. Avant, l'app
+      // lisait config/admin directement : l'empreinte du code admin était donc
+      // lisible par n'importe qui. Elle ne quitte plus le serveur.
       try {
-        const doc = await db.collection('config').doc('admin').get();
-        if (!doc.exists) {
+        const st = await piGet('/admin/status');
+        if (!st.initialized) {
           // Première utilisation → setup
           $('adminSetup').classList.remove('hidden');
           $('adminLogin').classList.add('hidden');
@@ -3163,7 +3214,9 @@
         }
       } catch (e) {
         console.error('openAdmin:', e);
-        $('adminError').textContent = 'Erreur de connexion à Firestore.';
+        $('adminSetup').classList.add('hidden');
+        $('adminLogin').classList.remove('hidden');
+        $('adminError').textContent = e.message;
       }
     }
 
@@ -3173,9 +3226,11 @@
       const status = $('setupStatus');
       status.className = 'save-status'; status.textContent = '';
 
-      if (p1.length < 6 || p1.length > 20) {
+      // 8 caractères minimum : l'empreinte n'est plus publique, mais un code
+      // court reste le maillon faible de tout le système.
+      if (p1.length < 8 || p1.length > 20) {
         status.className = 'save-status error';
-        status.textContent = 'Le code doit faire entre 6 et 20 caractères.';
+        status.textContent = 'Le code doit faire entre 8 et 20 caractères.';
         return;
       }
       if (p1 !== p2) {
@@ -3187,12 +3242,13 @@
       $('setupBtn').disabled = true;
       status.textContent = 'Enregistrement…';
       try {
-        const hash = await sha256Hex(p1);
-        await db.collection('config').doc('admin').set({ pinHash: hash, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+        // L'empreinte est calculée et stockée par le serveur (PBKDF2 salé),
+        // dans une zone que le navigateur ne peut pas lire.
+        const r = await piPost('/admin/setup', { code: p1 });
         status.className = 'save-status ok';
         status.textContent = '✓ Code admin enregistré. Connexion…';
         // Auto-login avec le code qu'on vient de définir
-        setTimeout(() => unlockAdminPanel(p1), 1500);
+        setTimeout(() => unlockAdminPanel(p1, r.token), 1500);
       } catch (e) {
         console.error(e);
         status.className = 'save-status error';
@@ -3202,10 +3258,17 @@
       }
     }
 
+    // Le code n'est plus vérifié dans le navigateur : on interroge le serveur,
+    // qui limite aussi les tentatives (5 par quart d'heure). D'où la validation
+    // au clic plutôt qu'à chaque frappe, pour ne pas brûler les essais.
     async function onAdminPinInput() {
+      $('adminError').textContent = '';
+    }
+
+    async function submitAdminCode() {
       const v = $('adminPin').value;
       $('adminError').textContent = '';
-      if (v.length < 6) return;
+      if (v.length < 6) { $('adminError').textContent = 'Code trop court.'; return; }
 
       // Mode démo
       if (!firebaseReady) {
@@ -3214,28 +3277,26 @@
         return;
       }
 
+      const btn = $('adminLoginBtn');
+      if (btn) btn.disabled = true;
+      $('adminError').textContent = 'Vérification…';
       try {
-        const hash = await sha256Hex(v);
-        const doc = await db.collection('config').doc('admin').get();
-        if (!doc.exists) {
-          $('adminError').textContent = 'Aucun code admin défini. Recharge la page.';
-          return;
-        }
-        if (hash === doc.data().pinHash) {
-          unlockAdminPanel(v);
-        } else {
-          $('adminError').textContent = 'Code admin incorrect.';
-        }
+        const r = await piPost('/admin/login', { code: v });
+        $('adminError').textContent = '';
+        unlockAdminPanel(v, r.token);
       } catch (e) {
-        console.error(e);
-        $('adminError').textContent = 'Erreur de vérification.';
+        $('adminError').textContent = e.message;
+      } finally {
+        if (btn) btn.disabled = false;
       }
     }
 
     // code = code admin en clair, gardé en mémoire pour (dé)chiffrer les PINs équipes
-    function unlockAdminPanel(code) {
+    // token = jeton de session renvoyé par le serveur, pour authentifier la suite
+    function unlockAdminPanel(code, token) {
       state.adminUnlocked = true;
       state.adminCode = code || null;
+      state.adminToken = token || null;
       $('adminLock').classList.add('hidden');
       $('adminPanel').classList.remove('hidden');
       // Adulte
@@ -3270,18 +3331,13 @@
           generated.push({ ...t, pin /* affichage uniquement */, pinEnc, points: 0 });
         }
 
-        // Écriture des équipes (sans hash de PIN, jamais la version en clair)
-        const batch = db.batch();
-        generated.forEach(t => {
-          const { pin, ...toSave } = t; // on retire la version en clair
-          batch.set(db.collection('teams').doc(), toSave);
-        });
-        await batch.commit();
-
-        // Enregistrement des hash de PIN côté serveur (zone privée)
+        // Création par le serveur, équipe par équipe : il écrit le document
+        // public (nom, cote, points) et range hash + PIN chiffré dans la zone
+        // privée. Le navigateur n'écrit plus rien directement.
         for (const t of generated) {
-          await piPost('/admin/set-pin', { adminCode: state.adminCode, scope: 'team', name: t.name, pin: t.pin });
+          await piAdmin('/admin/add-team', { name: t.name, cote: t.cote, pin: t.pin, pinEnc: t.pinEnc });
         }
+        pinEncCache = null;
 
         // Affichage des PINs en clair (UNE seule fois — à imprimer / distribuer)
         out.innerHTML = `
@@ -3305,6 +3361,88 @@
       }
     }
 
+    // Rotation du code admin. Impossible auparavant : les règles Firestore
+    // interdisaient de réécrire config/admin depuis le navigateur, donc un code
+    // faible (ou connu de quelqu'un d'autre) l'était pour toujours.
+    async function changeAdminCode() {
+      const p1 = $('changeAdminPin').value.trim();
+      const p2 = $('changeAdminPin2').value.trim();
+      const status = $('changeAdminStatus');
+      status.className = 'save-status'; status.textContent = '';
+
+      if (!state.adminCode) { status.className = 'save-status error'; status.textContent = 'Reconnecte-toi à l\'admin.'; return; }
+      if (p1.length < 8 || p1.length > 20) {
+        status.className = 'save-status error';
+        status.textContent = 'Le code doit faire entre 8 et 20 caractères.';
+        return;
+      }
+      if (p1 !== p2) {
+        status.className = 'save-status error';
+        status.textContent = 'Les deux codes ne correspondent pas.';
+        return;
+      }
+
+      $('changeAdminBtn').disabled = true;
+      status.textContent = 'Rechiffrement des PINs…';
+      try {
+        // On déchiffre chaque PIN avec l'ancien code et on le rechiffre avec le
+        // nouveau : le serveur ne peut pas le faire, il ne connaît que la
+        // version chiffrée.
+        const map = await loadPinEnc(true);
+        const pins = [];
+        for (const scope of ['teams', 'juniors']) {
+          for (const [id, enc] of Object.entries(map[scope])) {
+            if (!enc) continue;
+            try {
+              const plain = await decryptWithCode(enc, state.adminCode);
+              pins.push({ id, pinEnc: await encryptWithCode(plain, p1) });
+            } catch (e) { /* PIN illisible : on le laisse tel quel */ }
+          }
+        }
+
+        status.textContent = 'Enregistrement…';
+        const r = await piPost('/admin/change-code', {
+          currentCode: state.adminCode, newCode: p1, pins
+        });
+
+        state.adminCode = p1;
+        state.adminToken = r.token;
+        pinEncCache = null;
+        $('changeAdminPin').value = ''; $('changeAdminPin2').value = '';
+        status.className = 'save-status ok';
+        status.textContent = `✓ Code admin changé (${r.reencrypted} PINs rechiffrés)`;
+        renderAdminPins();
+        renderAdminJPins();
+      } catch (e) {
+        console.error(e);
+        status.className = 'save-status error';
+        status.textContent = 'Erreur : ' + e.message;
+      } finally {
+        $('changeAdminBtn').disabled = false;
+      }
+    }
+
+    // Les PINs chiffrés ne sont plus posés sur les documents publics (n'importe
+    // qui pouvait les récupérer et s'en servir pour attaquer le code admin hors
+    // ligne). On les demande au serveur, qui ne les donne qu'à un admin
+    // authentifié — le déchiffrement, lui, reste local.
+    // On mémorise la promesse, pas le résultat : les listes adulte et junior se
+    // chargent en parallèle et partagent ainsi une seule requête.
+    let pinEncCache = null;
+    function loadPinEnc(force) {
+      if (!pinEncCache || force) {
+        pinEncCache = piAdmin('/admin/pins')
+          .then(r => {
+            const map = { teams: {}, juniors: {} };
+            (r.teams   || []).forEach(t => { map.teams[t.id]   = t.pinEnc; });
+            (r.juniors || []).forEach(j => { map.juniors[j.id] = j.pinEnc; });
+            return map;
+          })
+          .catch(e => { pinEncCache = null; throw e; });
+      }
+      return pinEncCache;
+    }
+
     async function renderAdminPins() {
       const wrap = $('adminPinsList');
       if (!wrap) return;
@@ -3319,12 +3457,22 @@
 
       wrap.innerHTML = '<div class="loading-state">Déchiffrement des PINs…</div>';
 
+      let encMap = {};
+      try {
+        encMap = (await loadPinEnc()).teams;
+      } catch (e) {
+        wrap.innerHTML = '<div class="save-status error">Erreur : ' + escapeHtml(e.message) + '</div>';
+        return;
+      }
+
       // Déchiffrement de chaque PIN via le code admin en mémoire
       const decrypted = [];
       for (const t of state.teamsLive) {
+        // Repli sur le document public tant que la migration n'a pas tourné.
+        const enc = encMap[t.id] || t.pinEnc;
         let plain = '????';
         try {
-          if (t.pinEnc)      plain = await decryptWithCode(t.pinEnc, state.adminCode);
+          if (enc)           plain = await decryptWithCode(enc, state.adminCode);
           else if (t.pin)    plain = t.pin; // compat ancien format
         } catch (e) {
           plain = '⚠ erreur';
@@ -3350,7 +3498,11 @@
       const name = (state.teamsLive.find(t => t.id === id) || {}).name || 'cette équipe';
       if (!confirm(`Supprimer l'équipe "${name}" ?\n\nLes matchs déjà joués par cette équipe restent dans l'historique (mais sans profil cliquable). À utiliser en cas d'erreur de saisie initiale.`)) return;
       try {
-        await db.collection('teams').doc(id).delete();
+        // La suppression passe par le serveur : les règles Firestore ne
+        // l'autorisent plus depuis le navigateur (avant, n'importe quel
+        // visiteur pouvait vider le tournoi).
+        await piAdmin('/admin/delete-team', { id });
+        pinEncCache = null;
       } catch (e) { alert('Erreur : ' + e.message); }
     }
 
@@ -3360,16 +3512,12 @@
       if (!/^\d{4}$/.test(newPin)) { alert('PIN doit être 4 chiffres.'); return; }
       if (!state.adminCode) { alert('Reconnecte-toi à l\'admin.'); return; }
       try {
-        // Le hash est stocké côté serveur (zone privée), jamais sur le doc public.
-        await piPost('/admin/set-pin', { adminCode: state.adminCode, scope: 'team', name, pin: newPin });
-        // pinEnc (chiffré avec le code admin) reste pour l'affichage admin ; on
-        // retire tout ancien pinHash/pin en clair du document public.
+        // Hash ET version chiffrée sont désormais stockés côté serveur, dans la
+        // zone privée : plus rien de sensible ne reste sur le doc public.
         const pinEnc = await encryptWithCode(newPin, state.adminCode);
-        await db.collection('teams').doc(id).update({
-          pinEnc,
-          pinHash: firebase.firestore.FieldValue.delete(),
-          pin: firebase.firestore.FieldValue.delete()
-        });
+        await piAdmin('/admin/set-pin', { scope: 'team', name, pin: newPin, pinEnc });
+        pinEncCache = null;
+        renderAdminPins();
         alert(`PIN de ${name} mis à jour.`);
       } catch (e) { alert('Erreur : ' + e.message); }
     }
@@ -3517,8 +3665,7 @@
       try {
         // L'édition passe par le serveur (Pi) : il REDÉDUIT le vainqueur des
         // scores et recalcule les points (le navigateur ne modifie rien directement).
-        await piPost('/admin/edit-match', {
-          adminCode: state.adminCode,
+        await piAdmin('/admin/edit-match', {
           matchId: editingMatchId,
           winner: res.winner,
           scores
@@ -3542,7 +3689,8 @@
       if (!confirm(`Supprimer le match ${m.equipeA} vs ${m.equipeB} ?\nLe classement sera mis à jour.`)) return;
       try {
         // Le classement étant déduit des matchs, supprimer le match suffit.
-        await db.collection('matches').doc(id).delete();
+        // La suppression est réservée à l'admin, côté serveur.
+        await piAdmin('/admin/delete-match', { id });
       } catch (e) { alert('Erreur : ' + e.message); }
     }
 
@@ -3574,10 +3722,10 @@
         const pin     = randomPin();
         const pinEnc  = await encryptWithCode(pin, state.adminCode);
 
-        // 1) créer l'équipe (sans hash de PIN sur le doc public)
-        await db.collection('teams').add({ name, cote, points: 0, pinEnc });
-        // 2) enregistrer le hash du PIN côté serveur (zone privée)
-        await piPost('/admin/set-pin', { adminCode: state.adminCode, scope: 'team', name, pin });
+        // Création par le serveur : il valide le nom, écrit l'équipe et range
+        // hash + PIN chiffré dans la zone privée, en une fois.
+        await piAdmin('/admin/add-team', { name, cote, pin, pinEnc });
+        pinEncCache = null;
 
         status.className = 'save-status ok';
         status.textContent = '✓ Équipe ajoutée';
@@ -4142,16 +4290,12 @@
           const pinEnc  = await encryptWithCode(pin, state.adminCode);
           generated.push({ ...j, pin, pinEnc, stars: 0 });
         }
-        const batch = db.batch();
-        generated.forEach(j => {
-          const { pin, ...toSave } = j;   // sans hash, sans clair
-          batch.set(db.collection('juniors').doc(), toSave);
-        });
-        await batch.commit();
-        // Hash de PIN stockés côté serveur (zone privée)
+        // Création par le serveur (voir seedTeams) : le navigateur n'écrit plus
+        // directement dans Firestore.
         for (const j of generated) {
-          await piPost('/admin/set-pin', { adminCode: state.adminCode, scope: 'junior', name: j.name, pin: j.pin });
+          await piAdmin('/admin/add-junior', { name: j.name, green: !!j.green, pin: j.pin, pinEnc: j.pinEnc });
         }
+        pinEncCache = null;
         out.innerHTML = `
           <div style="font-size:0.85rem;font-weight:500;margin-bottom:0.6rem;color:var(--primary-dark);">
             ✓ ${generated.length} joueurs juniors créés. PINs à distribuer :
@@ -4185,8 +4329,8 @@
       try {
         const pin     = randomPin();
         const pinEnc  = await encryptWithCode(pin, state.adminCode);
-        await db.collection('juniors').add({ name, green, stars: 0, pinEnc });
-        await piPost('/admin/set-pin', { adminCode: state.adminCode, scope: 'junior', name, pin });
+        await piAdmin('/admin/add-junior', { name, green, pin, pinEnc });
+        pinEncCache = null;
         status.className = 'save-status ok'; status.textContent = '✓ Joueur ajouté';
         pinOut.innerHTML = `<div class="seed-pin-list" style="margin-top:0.8rem;">
           <div class="seed-pin-item"><span>${escapeHtml(name)}${green?' 🟢':''}</span><span class="pin-val">${pin}</span></div>
@@ -4207,11 +4351,19 @@
       }
       if (!state.adminCode) { wrap.innerHTML = '<div class="empty-state">Reconnecte-toi à l\'admin.</div>'; return; }
       wrap.innerHTML = '<div class="loading-state">Déchiffrement des PINs…</div>';
+      let encMap = {};
+      try {
+        encMap = (await loadPinEnc()).juniors;
+      } catch (e) {
+        wrap.innerHTML = '<div class="save-status error">Erreur : ' + escapeHtml(e.message) + '</div>';
+        return;
+      }
       const decrypted = [];
       for (const j of state.juniorsLive) {
+        const enc = encMap[j.id] || j.pinEnc;
         let plain = '????';
         try {
-          if (j.pinEnc)   plain = await decryptWithCode(j.pinEnc, state.adminCode);
+          if (enc)        plain = await decryptWithCode(enc, state.adminCode);
           else if (j.pin) plain = j.pin;
         } catch (e) { plain = '⚠ erreur'; }
         decrypted.push({ ...j, plainPin: plain });
@@ -4232,7 +4384,9 @@
 
     async function toggleJuniorGreen(id, currentGreen) {
       try {
-        await db.collection('juniors').doc(id).update({ green: !currentGreen });
+        // Réservé à l'admin : avant, ce champ était modifiable par n'importe
+        // quel visiteur, ce qui changeait le classement des futurs matchs.
+        await piAdmin('/admin/set-green', { id, green: !currentGreen });
       } catch (e) { alert('Erreur : ' + e.message); }
     }
 
@@ -4242,13 +4396,10 @@
       if (!/^\d{4}$/.test(newPin)) { alert('PIN doit être 4 chiffres.'); return; }
       if (!state.adminCode) { alert('Reconnecte-toi à l\'admin.'); return; }
       try {
-        await piPost('/admin/set-pin', { adminCode: state.adminCode, scope: 'junior', name, pin: newPin });
         const pinEnc = await encryptWithCode(newPin, state.adminCode);
-        await db.collection('juniors').doc(id).update({
-          pinEnc,
-          pinHash: firebase.firestore.FieldValue.delete(),
-          pin: firebase.firestore.FieldValue.delete()
-        });
+        await piAdmin('/admin/set-pin', { scope: 'junior', name, pin: newPin, pinEnc });
+        pinEncCache = null;
+        renderAdminJPins();
         alert(`PIN de ${name} mis à jour.`);
       } catch (e) { alert('Erreur : ' + e.message); }
     }
@@ -4256,8 +4407,10 @@
     async function deleteJunior(id) {
       const name = (state.juniorsLive.find(j => j.id === id) || {}).name || 'ce joueur';
       if (!confirm(`Supprimer le joueur "${name}" ?`)) return;
-      try { await db.collection('juniors').doc(id).delete(); }
-      catch (e) { alert('Erreur : ' + e.message); }
+      try {
+        await piAdmin('/admin/delete-junior', { id });
+        pinEncCache = null;
+      } catch (e) { alert('Erreur : ' + e.message); }
     }
 
     function renderAdminJMatches() {
@@ -4349,8 +4502,7 @@
 
       try {
         // L'édition passe par le serveur (Pi), qui redéduit le vainqueur et recalcule les étoiles.
-        await piPost('/admin/edit-jmatch', {
-          adminCode: state.adminCode,
+        await piAdmin('/admin/edit-jmatch', {
           matchId: editingJMatchId,
           winner: res.winner,
           scores
@@ -4374,7 +4526,8 @@
       if (!confirm(`Supprimer ce match ?\nLe classement sera mis à jour.`)) return;
       try {
         // Le classement étant déduit des matchs, supprimer le match suffit.
-        await db.collection('juniors_matches').doc(id).delete();
+        // La suppression est réservée à l'admin, côté serveur.
+        await piAdmin('/admin/delete-jmatch', { id });
       } catch (e) { alert('Erreur : ' + e.message); }
     }
 
