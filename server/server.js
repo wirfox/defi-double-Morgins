@@ -133,6 +133,31 @@ function cleanScores(scores) {
   return out;
 }
 
+// Scores d'un match ÉGALITÉ (junior) : au moins un set, chaque score au format
+// "a-b" valide, et le résultat global doit être une VRAIE égalité (autant de
+// sets gagnés de chaque côté — un set 3-3 compte pour personne). Renvoie l'objet
+// scores nettoyé, ou null si ce n'est pas une égalité cohérente.
+function cleanDrawScores(scores) {
+  if (!scores || typeof scores !== 'object') return null;
+  const out = {};
+  let setsA = 0, setsB = 0, entered = 0;
+  for (const k of ['set1', 'set2', 'set3']) {
+    const v = scores[k];
+    if (v === undefined || v === '') continue;
+    if (!isValidScore(v)) return null;
+    const parts = String(v).split('-');
+    if (parts.length !== 2) return null;
+    const a = parseInt(parts[0], 10), b = parseInt(parts[1], 10);
+    if (!Number.isInteger(a) || !Number.isInteger(b) || a < 0 || b < 0) return null;
+    if (a > b) setsA++; else if (b > a) setsB++;
+    out[k] = v;
+    entered++;
+  }
+  if (entered < 1) return null;      // au moins un set saisi
+  if (setsA !== setsB) return null;  // sinon il y a un vainqueur → pas une égalité
+  return out;
+}
+
 // Nom d'équipe / de joueur : les créations passent désormais par ici, donc
 // c'est le bon endroit pour refuser les caractères de contrôle et les balises
 // (défense en profondeur contre une injection via un nom).
@@ -824,8 +849,11 @@ app.post('/admin/edit-jmatch', async (req, res) => {
 app.post('/admin/add-jmatch-draw', async (req, res) => {
   try {
     if (!(await requireAdmin(req, res))) return;
-    const { joueurA, joueurB } = req.body || {};
+    const { joueurA, joueurB, scores } = req.body || {};
     if (joueurA === joueurB) return res.status(400).json({ ok: false, error: 'Un joueur ne peut pas jouer contre lui-même' });
+
+    const sc = cleanDrawScores(scores);
+    if (!sc) return res.status(400).json({ ok: false, error: 'Score invalide : ce n\'est pas une égalité (ex. 3-3 sur un set).' });
 
     const jA = await findByName('juniors', joueurA);
     const jB = await findByName('juniors', joueurB);
@@ -834,11 +862,12 @@ app.post('/admin/add-jmatch-draw', async (req, res) => {
     const greenBalls = !!(jA.green || jB.green);
     await db.collection('juniors_matches').add({
       joueurA: jA.name, joueurB: jB.name,
-      vainqueur: null, scores: { set1: '3-3', set2: '3-3' },
+      vainqueur: null, scores: sc,
       starsA: 1, starsB: 1, greenBalls,
       date: FieldValue.serverTimestamp(),
     });
-    console.log(`[add-jmatch-draw] ${jA.name} vs ${jB.name} | égalité 3-3 | +1⭐/+1⭐`);
+    const setsTxt = Object.values(sc).join(' / ');
+    console.log(`[add-jmatch-draw] ${jA.name} vs ${jB.name} | égalité ${setsTxt} | +1⭐/+1⭐`);
     return res.json({ ok: true, starsA: 1, starsB: 1 });
   } catch (e) {
     console.error('add-jmatch-draw:', e);
@@ -894,4 +923,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, computePoints, deriveWinner, cleanScores, cleanName, isPinEnc };
+module.exports = { app, computePoints, deriveWinner, cleanScores, cleanDrawScores, cleanName, isPinEnc };

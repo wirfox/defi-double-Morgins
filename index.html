@@ -741,6 +741,7 @@
     }
     .match-result-badge.win  { background: #DCFCE7;          color: #166534; }
     .match-result-badge.loss { background: var(--primary-light); color: var(--primary-dark); }
+    .match-result-badge.draw { background: #E5E7EB;          color: #374151; }
 
     .match-teams {
       display: grid;
@@ -756,6 +757,8 @@
     }
     .match-team.winner { color: var(--text-dark); font-weight: 500; }
     .match-team.lost   { color: var(--text-light); }
+    /* Égalité : les deux joueurs sur le même pied, aucun mis en avant. */
+    .match-team.draw   { color: var(--text-dark); font-weight: 400; }
     .match-trophy { font-size: 0.95rem; }
     .match-team .team-pts {
       font-size: 0.78rem;
@@ -1720,8 +1723,9 @@
           <div class="card">
             <div class="card-title">Enregistrer un match junior à égalité</div>
             <div style="font-size:0.82rem;color:var(--text-light);margin-bottom:0.9rem;line-height:1.5;">
-              Utilisé pour enregistrer un match qui s'est terminé 3:3 (ou autre égalité).
-              Les deux joueurs reçoivent automatiquement 1 point chacun.
+              Pour un match terminé à égalité (ex. 3-3 sur un set). Aucun vainqueur :
+              les deux joueurs reçoivent 1 point chacun, et le match s'affiche comme
+              une égalité.
             </div>
             <div class="form-group" style="margin-bottom: 0.7rem;">
               <label class="form-label">Joueur 1</label>
@@ -1729,11 +1733,19 @@
                 <option value="">Sélectionner…</option>
               </select>
             </div>
-            <div class="form-group" style="margin-bottom: 0.9rem;">
+            <div class="form-group" style="margin-bottom: 0.7rem;">
               <label class="form-label">Joueur 2</label>
               <select class="form-input" id="drawJoueurB">
                 <option value="">Sélectionner…</option>
               </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 0.9rem;">
+              <label class="form-label">Score (jeux — doivent être égaux)</label>
+              <div style="display:flex;align-items:center;gap:0.6rem;">
+                <input type="number" class="form-input" id="drawScoreA" min="0" max="9" inputmode="numeric" placeholder="3" style="text-align:center;">
+                <span style="font-weight:600;font-size:1.1rem;color:var(--text-light);">–</span>
+                <input type="number" class="form-input" id="drawScoreB" min="0" max="9" inputmode="numeric" placeholder="3" style="text-align:center;">
+              </div>
             </div>
             <button class="btn-calc" onclick="addJuniorDrawMatch()" id="addDrawJBtn">Enregistrer l'égalité</button>
             <div id="addDrawJStatus" class="save-status"></div>
@@ -3858,18 +3870,24 @@
       const rankTxt = rankIdx >= 0 ? `${rankIdx + 1}ᵉ / ${ranked.length} joueurs` : '—';
 
       const myMatches = state.juniorsMatchesLive.filter(m => m.joueurA === name || m.joueurB === name);
+      // Égalité : ni 'A' ni 'B' comme vainqueur. Ne compte ni victoire ni défaite.
+      const isDrawM = m2 => m2.vainqueur !== 'A' && m2.vainqueur !== 'B';
       const wins   = myMatches.filter(m => (m.joueurA === name && m.vainqueur === 'A') || (m.joueurB === name && m.vainqueur === 'B'));
-      const losses = myMatches.filter(m => !((m.joueurA === name && m.vainqueur === 'A') || (m.joueurB === name && m.vainqueur === 'B')));
-      const winRate = myMatches.length ? Math.round(wins.length / myMatches.length * 100) : 0;
+      const draws  = myMatches.filter(isDrawM);
+      const losses = myMatches.filter(m => !isDrawM(m) && !((m.joueurA === name && m.vainqueur === 'A') || (m.joueurB === name && m.vainqueur === 'B')));
+      const decisive = wins.length + losses.length;
+      const winRate = decisive ? Math.round(wins.length / decisive * 100) : 0;
 
       // Moyenne d'étoiles par match
       const avgStars = myMatches.length
         ? Math.round((starsMap[name] || 0) / myMatches.length * 10) / 10
         : 0;
 
-      // Série en cours (matchs triés du + récent au + ancien)
+      // Série en cours (matchs triés du + récent au + ancien). Une égalité
+      // interrompt la série (ni victoire ni défaite).
       let streak = 0, streakType = '';
       for (const m of myMatches) {
+        if (isDrawM(m)) break;
         const won = (m.joueurA === name && m.vainqueur === 'A') || (m.joueurB === name && m.vainqueur === 'B');
         if (streak === 0) { streak = 1; streakType = won ? 'V' : 'D'; }
         else if ((won && streakType === 'V') || (!won && streakType === 'D')) streak++;
@@ -3936,13 +3954,17 @@
         <div class="vd-bar-wrap">
           <div class="vd-bar-label">
             <span>${wins.length} victoire${wins.length > 1 ? 's' : ''}</span>
+            ${draws.length ? `<span>${draws.length} égalité${draws.length > 1 ? 's' : ''}</span>` : ''}
             <span>${losses.length} défaite${losses.length > 1 ? 's' : ''}</span>
           </div>
           <div class="vd-bar">
             <div class="vd-bar-win"  style="width:${winPct}%"></div>
             <div class="vd-bar-loss" style="width:${100 - winPct}%"></div>
           </div>
-        </div>` : ''}
+        </div>` : (draws.length ? `
+        <div class="vd-bar-wrap">
+          <div class="vd-bar-label"><span>${draws.length} égalité${draws.length > 1 ? 's' : ''}</span></div>
+        </div>` : '')}
 
         <div class="stats-grid">
           <div class="stat-card">
@@ -3950,8 +3972,8 @@
             <div class="stat-value">${myMatches.length}</div>
           </div>
           <div class="stat-card">
-            <div class="stat-label">Victoires</div>
-            <div class="stat-value">${wins.length}V — ${losses.length}D</div>
+            <div class="stat-label">Bilan</div>
+            <div class="stat-value">${wins.length}V — ${losses.length}D${draws.length ? ` — ${draws.length}N` : ''}</div>
           </div>
           <div class="stat-card">
             <div class="stat-label">Taux de victoire</div>
@@ -3989,8 +4011,10 @@
     }
 
     function renderJMatchCard(m, viewpoint) {
+      // Égalité : pas de vainqueur ('A'/'B'). On n'affiche ni trophée ni gras.
+      const isDraw = m.vainqueur !== 'A' && m.vainqueur !== 'B';
       const isViewerA = m.joueurA === viewpoint;
-      const won = viewpoint && ((isViewerA && m.vainqueur === 'A') || (!isViewerA && m.vainqueur === 'B'));
+      const won = !isDraw && viewpoint && ((isViewerA && m.vainqueur === 'A') || (!isViewerA && m.vainqueur === 'B'));
       const winA = m.vainqueur === 'A';
       const trophy = '<span class="match-trophy">🏆</span>';
 
@@ -4001,13 +4025,23 @@
       // Compat ancien format (un seul score)
       if (sets.length === 0 && m.score) sets.push(`<span class="set">${escapeHtml(m.score)}</span>`);
 
-      return `
-        <div class="match-card">
-          <div class="match-head">
-            <div class="match-date">${fmtDate(m.date)}${m.greenBalls ? ' · 🟢 balles vertes' : ''}</div>
-            ${viewpoint ? `<div class="match-result-badge ${won ? 'win' : 'loss'}">${won ? '🏆 Victoire +2⭐' : '🥈 Défaite +1⭐'}</div>` : ''}
-          </div>
-          <div class="match-teams">
+      let badge = '';
+      if (viewpoint) {
+        if (isDraw)   badge = `<div class="match-result-badge draw">⚖️ Égalité +1⭐</div>`;
+        else          badge = `<div class="match-result-badge ${won ? 'win' : 'loss'}">${won ? '🏆 Victoire +2⭐' : '🥈 Défaite +1⭐'}</div>`;
+      }
+
+      const teamsHtml = isDraw
+        ? `
+            <div class="match-team draw">
+              ${escapeHtml(m.joueurA)}
+              <span class="team-pts">+${num(m.starsA)}⭐</span>
+            </div>
+            <div class="match-team match-team-b draw">
+              <span class="team-pts">+${num(m.starsB)}⭐</span>
+              ${escapeHtml(m.joueurB)}
+            </div>`
+        : `
             <div class="match-team ${winA ? 'winner' : 'lost'}">
               ${winA ? trophy + ' ' : ''}${escapeHtml(m.joueurA)}
               <span class="team-pts">+${num(m.starsA)}⭐</span>
@@ -4015,8 +4049,15 @@
             <div class="match-team match-team-b ${winA ? 'lost' : 'winner'}">
               <span class="team-pts">+${num(m.starsB)}⭐</span>
               ${escapeHtml(m.joueurB)}${!winA ? ' ' + trophy : ''}
-            </div>
+            </div>`;
+
+      return `
+        <div class="match-card">
+          <div class="match-head">
+            <div class="match-date">${fmtDate(m.date)}${m.greenBalls ? ' · 🟢 balles vertes' : ''}</div>
+            ${badge}
           </div>
+          <div class="match-teams">${teamsHtml}</div>
           ${sets.length ? `<div class="match-scores">${sets.join('')}</div>` : ''}
         </div>`;
     }
@@ -4454,17 +4495,28 @@
       if (!state.adminCode) { alert('Reconnecte-toi à l\'admin.'); return; }
       const joueurA = $('drawJoueurA').value.trim();
       const joueurB = $('drawJoueurB').value.trim();
+      const rawA = $('drawScoreA').value.trim();
+      const rawB = $('drawScoreB').value.trim();
       const status = $('addDrawJStatus');
       status.className = 'save-status'; status.textContent = '';
       if (!joueurA || !joueurB) { status.className = 'save-status error'; status.textContent = 'Sélectionne deux joueurs.'; return; }
       if (joueurA === joueurB) { status.className = 'save-status error'; status.textContent = 'Deux joueurs différents requis.'; return; }
+      if (rawA === '' || rawB === '') { status.className = 'save-status error'; status.textContent = 'Entre le score des deux joueurs.'; return; }
+      const a = parseInt(rawA, 10), b = parseInt(rawB, 10);
+      if (!Number.isInteger(a) || !Number.isInteger(b) || a < 0 || b < 0) {
+        status.className = 'save-status error'; status.textContent = 'Score invalide.'; return;
+      }
+      if (a !== b) { status.className = 'save-status error'; status.textContent = 'Pour une égalité, les deux scores doivent être identiques (ex. 3-3).'; return; }
+      const scores = { set1: `${a}-${b}` };
       $('addDrawJBtn').disabled = true;
       status.textContent = 'Enregistrement…';
       try {
-        await piAdmin('/admin/add-jmatch-draw', { joueurA, joueurB });
-        status.className = 'save-status ok'; status.textContent = '✓ Match égalité enregistré (1 point à chacun)';
+        await piAdmin('/admin/add-jmatch-draw', { joueurA, joueurB, scores });
+        status.className = 'save-status ok'; status.textContent = `✓ Égalité ${a}-${b} enregistrée (1 point à chacun)`;
         $('drawJoueurA').value = '';
         $('drawJoueurB').value = '';
+        $('drawScoreA').value = '';
+        $('drawScoreB').value = '';
       } catch (e) {
         status.className = 'save-status error'; status.textContent = 'Erreur : ' + e.message;
       } finally {
@@ -4485,7 +4537,7 @@
         if (m.scores?.set3) setsList.push(m.scores.set3);
         if (setsList.length === 0 && m.score) setsList.push(m.score);
         const setsTxt = setsList.length ? setsList.join(' / ') : '?';
-        const resultTxt = m.vainqueur === null ? '⚖️ Égalité' : (m.vainqueur === 'A' ? '🏆 A' : '🏆 B');
+        const resultTxt = (m.vainqueur !== 'A' && m.vainqueur !== 'B') ? '⚖️ Égalité' : (m.vainqueur === 'A' ? '🏆 A' : '🏆 B');
         return `
         <div class="admin-match-row">
           <div class="admin-match-info">
