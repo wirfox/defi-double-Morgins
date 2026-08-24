@@ -818,6 +818,34 @@ app.post('/admin/edit-jmatch', async (req, res) => {
   }
 });
 
+// Enregistrement d'un match JUNIOR ÉGALITÉ : l'admin enregistre un match qui s'est
+// terminé 3:3 (ou toute autre égalité) et attribue 1 point à chacun. Aucune saisie
+// de PIN requise puisque c'est l'admin qui décide.
+app.post('/admin/add-jmatch-draw', async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const { joueurA, joueurB } = req.body || {};
+    if (joueurA === joueurB) return res.status(400).json({ ok: false, error: 'Un joueur ne peut pas jouer contre lui-même' });
+
+    const jA = await findByName('juniors', joueurA);
+    const jB = await findByName('juniors', joueurB);
+    if (!jA || !jB) return res.status(400).json({ ok: false, error: 'Joueur introuvable' });
+
+    const greenBalls = !!(jA.green || jB.green);
+    await db.collection('juniors_matches').add({
+      joueurA: jA.name, joueurB: jB.name,
+      vainqueur: null, scores: { set1: '3-3', set2: '3-3' },
+      starsA: 1, starsB: 1, greenBalls,
+      date: FieldValue.serverTimestamp(),
+    });
+    console.log(`[add-jmatch-draw] ${jA.name} vs ${jB.name} | égalité 3-3 | +1⭐/+1⭐`);
+    return res.json({ ok: true, starsA: 1, starsB: 1 });
+  } catch (e) {
+    console.error('add-jmatch-draw:', e);
+    return res.status(500).json({ ok: false, error: 'Erreur serveur' });
+  }
+});
+
 // ----- Publication automatique de l'URL du tunnel dans Firestore -----------
 // Le tunnel gratuit Cloudflare change d'URL à chaque redémarrage. Le serveur
 // interroge les métriques de cloudflared pour connaître l'URL publique

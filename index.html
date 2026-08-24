@@ -1718,6 +1718,28 @@
           </div>
 
           <div class="card">
+            <div class="card-title">Enregistrer un match junior à égalité</div>
+            <div style="font-size:0.82rem;color:var(--text-light);margin-bottom:0.9rem;line-height:1.5;">
+              Utilisé pour enregistrer un match qui s'est terminé 3:3 (ou autre égalité).
+              Les deux joueurs reçoivent automatiquement 1 point chacun.
+            </div>
+            <div class="form-group" style="margin-bottom: 0.7rem;">
+              <label class="form-label">Joueur 1</label>
+              <select class="form-input" id="drawJoueurA">
+                <option value="">Sélectionner…</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 0.9rem;">
+              <label class="form-label">Joueur 2</label>
+              <select class="form-input" id="drawJoueurB">
+                <option value="">Sélectionner…</option>
+              </select>
+            </div>
+            <button class="btn-calc" onclick="addJuniorDrawMatch()" id="addDrawJBtn">Enregistrer l'égalité</button>
+            <div id="addDrawJStatus" class="save-status"></div>
+          </div>
+
+          <div class="card">
             <div class="card-title">Matchs juniors enregistrés</div>
             <div id="adminJMatchesList"><!-- Rempli par JS --></div>
           </div>
@@ -3306,6 +3328,7 @@
       // Junior
       renderAdminJPins();
       renderAdminJMatches();
+      populateDrawMatchSelects();
     }
 
     async function seedTeams() {
@@ -4413,6 +4436,42 @@
       } catch (e) { alert('Erreur : ' + e.message); }
     }
 
+    function populateDrawMatchSelects() {
+      const selA = $('drawJoueurA');
+      const selB = $('drawJoueurB');
+      if (!selA || !selB) return;
+      const opts = getJuniorsSource()
+        .slice()
+        .sort((a,b) => a.name.localeCompare(b.name, 'fr'))
+        .map(j => `<option value="${escapeHtml(j.name)}">${escapeHtml(j.name)}</option>`)
+        .join('');
+      selA.innerHTML = '<option value="">Sélectionner…</option>' + opts;
+      selB.innerHTML = '<option value="">Sélectionner…</option>' + opts;
+    }
+
+    async function addJuniorDrawMatch() {
+      if (!firebaseReady) { alert('Firebase non configuré.'); return; }
+      if (!state.adminCode) { alert('Reconnecte-toi à l\'admin.'); return; }
+      const joueurA = $('drawJoueurA').value.trim();
+      const joueurB = $('drawJoueurB').value.trim();
+      const status = $('addDrawJStatus');
+      status.className = 'save-status'; status.textContent = '';
+      if (!joueurA || !joueurB) { status.className = 'save-status error'; status.textContent = 'Sélectionne deux joueurs.'; return; }
+      if (joueurA === joueurB) { status.className = 'save-status error'; status.textContent = 'Deux joueurs différents requis.'; return; }
+      $('addDrawJBtn').disabled = true;
+      status.textContent = 'Enregistrement…';
+      try {
+        await piAdmin('/admin/add-jmatch-draw', { joueurA, joueurB });
+        status.className = 'save-status ok'; status.textContent = '✓ Match égalité enregistré (1 point à chacun)';
+        $('drawJoueurA').value = '';
+        $('drawJoueurB').value = '';
+      } catch (e) {
+        status.className = 'save-status error'; status.textContent = 'Erreur : ' + e.message;
+      } finally {
+        $('addDrawJBtn').disabled = false;
+      }
+    }
+
     function renderAdminJMatches() {
       const wrap = $('adminJMatchesList');
       if (!wrap) return;
@@ -4426,10 +4485,11 @@
         if (m.scores?.set3) setsList.push(m.scores.set3);
         if (setsList.length === 0 && m.score) setsList.push(m.score);
         const setsTxt = setsList.length ? setsList.join(' / ') : '?';
+        const resultTxt = m.vainqueur === null ? '⚖️ Égalité' : (m.vainqueur === 'A' ? '🏆 A' : '🏆 B');
         return `
         <div class="admin-match-row">
           <div class="admin-match-info">
-            <div class="a-teams">${escapeHtml(m.joueurA)} vs ${escapeHtml(m.joueurB)} · ${m.vainqueur === 'A' ? '🏆 A' : '🏆 B'}${m.greenBalls ? ' · 🟢' : ''}</div>
+            <div class="a-teams">${escapeHtml(m.joueurA)} vs ${escapeHtml(m.joueurB)} · ${resultTxt}${m.greenBalls ? ' · 🟢' : ''}</div>
             <div class="a-date">${fmtDate(m.date)} · ${escapeHtml(m.joueurA)} +${num(m.starsA)}⭐ / ${escapeHtml(m.joueurB)} +${num(m.starsB)}⭐ · ${escapeHtml(setsTxt)}${m.editedAt ? ' · ✏️ modifié' : ''}</div>
           </div>
           <div class="admin-match-actions">
