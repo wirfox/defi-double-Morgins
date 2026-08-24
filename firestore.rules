@@ -4,21 +4,26 @@ rules_version = '2';
 // Règles de sécurité Firestore — Défi Double TC Morgins
 //
 // Architecture : un serveur de confiance (Raspberry, via le SDK Admin qui
-// contourne ces règles) est le SEUL à écrire/éditer les matchs et à gérer les
-// hash de PIN (collection privée `secrets`). Le navigateur ne fait que LIRE,
-// plus quelques opérations admin non sensibles (suppression/édition de fiches).
+// contourne ces règles) est le SEUL à écrire quoi que ce soit. Le navigateur
+// ne fait plus que LIRE les classements ; toute modification (saisie d'un
+// match, ajout/suppression d'une équipe, changement de PIN) passe par le
+// serveur, qui vérifie les PINs ou le code admin avant d'agir.
 //
 // Ce que ça garantit :
 //   ✓ Personne ne peut créer ni modifier un match depuis le navigateur
-//     (création/édition réservées au serveur, qui vérifie les PINs). Donc
-//     impossible de se fabriquer un match gagnant.
-//   ✓ Les hash de PIN ne sont jamais lisibles par le navigateur (collection
-//     `secrets` interdite) → les PINs ne sont pas crackables.
+//     (réservé au serveur, qui vérifie les PINs). Impossible de se fabriquer
+//     un match gagnant.
+//   ✓ Personne ne peut plus SUPPRIMER une équipe, un joueur ou un match depuis
+//     le navigateur : c'était ouvert à tout visiteur, qui pouvait donc vider le
+//     tournoi en quelques lignes dans la console.
+//   ✓ Aucun champ sensible n'est lisible : les hash de PIN, les PINs chiffrés
+//     et l'empreinte du code admin vivent tous dans `secrets`, interdite en
+//     lecture. Plus rien à récupérer pour tenter une attaque hors-ligne.
 //   ✓ Les points/étoiles ne sont jamais écrits (déduits des matchs).
 //
-// Reste possible (assumé, visible/réversible) : un admin (ou un curieux) peut
-// supprimer une fiche/un match depuis le navigateur — ça n'attribue pas de
-// points, c'est visible et réparable.
+// ⚠️ ORDRE DE DÉPLOIEMENT — ces règles supposent que le nouveau site ET le
+// nouveau serveur sont déjà en ligne. Les publier avant casserait l'ancien
+// site, qui écrit encore directement dans Firestore. Voir server/README.md.
 //
 // Déployer : Console Firebase > Firestore > Règles > coller > Publier.
 // ============================================================================
@@ -26,77 +31,50 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function isScore(s) {
-      return s is string && s.size() >= 1 && s.size() <= 12;
-    }
-    function validScores(sc) {
-      return sc is map
-        && isScore(sc.set1) && isScore(sc.set2)
-        && (!('set3' in sc) || isScore(sc.set3));
-    }
-    function shortStr(v, maxLen) {
-      return v is string && v.size() > 0 && v.size() <= maxLen;
-    }
-
     // ---- ÉQUIPES (adulte) ----
+    // Lecture publique (classement) ; toute écriture passe par le serveur.
     match /teams/{id} {
       allow read: if true;
-      // Création (seed / ajout) : plus de pinHash sur le doc public (il va dans `secrets`).
-      allow create: if shortStr(request.resource.data.name, 80)
-                    && request.resource.data.cote is number
-                    && request.resource.data.cote >= 0 && request.resource.data.cote <= 100
-                    && request.resource.data.points is number;
-      // Seuls pinEnc (chiffré, sûr) / pin (legacy, supprimé) / pinHash (supprimé) bougent.
-      allow update: if request.resource.data.diff(resource.data).affectedKeys()
-                         .hasOnly(['pinHash', 'pinEnc', 'pin'])
-                    && request.resource.data.points == resource.data.points;
-      allow delete: if true;
+      allow write: if false;
     }
 
-    // ---- MATCHS (adulte) : écriture/édition réservées au serveur ----
+    // ---- MATCHS (adulte) ----
     match /matches/{id} {
       allow read: if true;
-      allow create: if false;   // seul le serveur (SDK Admin) crée les matchs
-      allow update: if false;   // édition via le serveur uniquement
-      allow delete: if true;    // suppression / reset depuis le panneau admin
+      allow write: if false;
     }
 
     // ---- JOUEURS (junior) ----
     match /juniors/{id} {
       allow read: if true;
-      allow create: if shortStr(request.resource.data.name, 80)
-                    && request.resource.data.stars is number
-                    && (!('green' in request.resource.data) || request.resource.data.green is bool);
-      allow update: if request.resource.data.diff(resource.data).affectedKeys()
-                         .hasOnly(['pinHash', 'pinEnc', 'pin', 'green'])
-                    && request.resource.data.stars == resource.data.stars
-                    && (!('green' in request.resource.data) || request.resource.data.green is bool);
-      allow delete: if true;
+      allow write: if false;
     }
 
-    // ---- MATCHS (junior) : écriture/édition réservées au serveur ----
+    // ---- MATCHS (junior) ----
     match /juniors_matches/{id} {
       allow read: if true;
-      allow create: if false;
-      allow update: if false;
-      allow delete: if true;
+      allow write: if false;
     }
 
-    // ---- SECRETS (hash des PINs) : INTERDIT au navigateur ----
-    // Seul le serveur (SDK Admin) y accède. Les clients ne peuvent ni lire ni écrire.
+    // ---- SECRETS : INTERDIT au navigateur ----
+    // Hash des PINs, PINs chiffrés (pinEnc) et empreinte PBKDF2 du code admin.
+    // Seul le serveur (SDK Admin) y accède.
     match /secrets/{id} {
       allow read, write: if false;
     }
 
     // ---- CONFIG ----
-    // config/admin : hash du code admin (lu par l'app à la connexion).
-    // config/server : URL du serveur Pi, écrite par le serveur (SDK Admin), lue par l'app.
-    match /config/{id} {
+    // config/server : URL du tunnel, écrite par le serveur, lue par l'app.
+    match /config/server {
       allow read: if true;
-      // Seul config/admin peut être créé par le navigateur (init du code admin).
-      // config/server est écrit par le serveur (SDK Admin), qui passe outre.
-      allow create: if id == 'admin' && request.resource.data.pinHash is string;
-      allow update, delete: if false;
+      allow write: if false;
+    }
+
+    // Tout le reste de config — dont l'ancien config/admin — est illisible.
+    // L'empreinte du code admin ne doit plus pouvoir être récupérée puis
+    // attaquée hors-ligne ; elle vit maintenant dans `secrets`.
+    match /config/{id} {
+      allow read, write: if false;
     }
 
     // Tout le reste : refusé.
