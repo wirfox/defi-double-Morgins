@@ -7,6 +7,7 @@ const Module = require('module');
 
 // ---------- Fausse base Firestore (seulement ce que le serveur utilise) ----------
 const store = new Map(); // nom de collection -> Map(id -> données)
+const failing = new Set(); // documents dont la lecture échoue (« collection/id »), pour simuler une panne
 const coll = (name) => { if (!store.has(name)) store.set(name, new Map()); return store.get(name); };
 const SERVER_TS = Symbol('serverTimestamp');
 const DELETE = Symbol('delete');
@@ -28,7 +29,7 @@ function snap(name, id) {
 function docRef(name, id) {
   return {
     id,
-    async get() { await later(); return snap(name, id); },
+    async get() { await later(); if (failing.has(name + '/' + id)) throw new Error('Firestore indisponible'); return snap(name, id); },
     async set(data, opts) { await later(); coll(name).set(id, resolve(data, opts && opts.merge ? coll(name).get(id) : {})); },
     async create(data) {
       await later();
@@ -84,7 +85,7 @@ const PIN = '1234';
 const sha = (s) => crypto.createHash('sha256').update(s, 'utf8').digest('hex');
 function addTeam(id, cote = 10) { coll('teams').set(id, { name: id, cote, points: 0 }); coll('secrets').set(id, { hash: sha(PIN) }); }
 function addJunior(id) { coll('juniors').set(id, { name: id, green: false, stars: 0 }); coll('secrets').set(id, { hash: sha(PIN) }); }
-for (let i = 1; i <= 20; i++) addTeam('T' + i, 5 + i);
+for (let i = 1; i <= 32; i++) addTeam('T' + i, 5 + i);
 for (let i = 1; i <= 4; i++) addJunior('J' + i);
 
 // ---------- Serveur ----------
@@ -301,4 +302,122 @@ test('la liste des PIN chiffrés ne relit plus les fiches publiques des équipes
   const r = await call('/admin/pins', { adminToken: token }, newIp());
   assert.strictEqual(r.ok, true);
   assert.strictEqual(r.teams.find((t) => t.id === 'T20').pinEnc, null);
+});
+
+
+// ---------- Corrections après relecture et tests de bout en bout ----------
+// Horloge simulée du serveur (Date.now), rétablie après chaque usage.
+async function withClock(start, fn) {
+  const real = Date.now;
+  let now = start;
+  Date.now = () => now;
+  try { return await fn({ advance: (ms) => { now += ms; } }); } finally { Date.now = real; }
+}
+
+test("le blocage d'un appareil dure 15 minutes à partir du 10e PIN faux", async () => {
+  const ip = newIp();
+  await withClock(Date.now(), async (clock) => {
+    await verify('T21', '0000', ip);
+    clock.advance(14 * 60_000 + 55_000);
+    for (let i = 0; i < 9; i++) await verify('T21', '0000', ip); // 10e échec
+    clock.advance(6_000);
+    const r = await verify('T21', PIN, ip);
+    assert.strictEqual(r.status, 429, "l'appareil doit rester bloqué juste après son 10e échec");
+    assert.match(r.error, /15 min/);
+    clock.advance(15 * 60_000);
+    assert.strictEqual((await verify('T21', PIN, ip)).ok, true);
+  });
+});
+
+test('un zéro en tête est normalisé : « 06-4 » est enregistré « 6-4 » et reconnu comme doublon', async () => {
+  const a = await submit('T22', 'T23', { set1: '06-4', set2: '6-3' });
+  assert.strictEqual(a.ok, true);
+  const saved = [...coll('matches').values()].find((m) => m.equipeA === 'T22' && m.equipeB === 'T23');
+  assert.strictEqual(saved.scores.set1, '6-4');
+  assert.strictEqual((await submit('T22', 'T23', { set1: '6-4', set2: '6-3' })).status, 409);
+});
+
+test("un identifiant d'envoi réutilisé pour un autre score crée bien le nouveau match", async () => {
+  const before = matchCount();
+  assert.strictEqual((await submit('T24', 'T25', { set1: '6-1', set2: '6-1' }, { submissionId: 'reutilise-1' })).ok, true);
+  const b = await submit('T24', 'T25', { set1: '6-2', set2: '6-2' }, { submissionId: 'reutilise-1' });
+  assert.strictEqual(b.ok, true);
+  assert.notStrictEqual(b.duplicate, true);
+  assert.strictEqual(matchCount(), before + 2);
+});
+
+test("un identifiant d'envoi déjà connu n'exempte pas de la vérification des PIN", async () => {
+  assert.strictEqual((await submit('T26', 'T27', { set1: '6-1', set2: '6-1' }, { submissionId: 'avec-pin-1' })).ok, true);
+  const r = await call('/submit-match', { teamA: 'T26', pinA: '0000', teamB: 'T27', pinB: PIN, scores: { set1: '6-1', set2: '6-1' }, submissionId: 'avec-pin-1' }, newIp());
+  assert.strictEqual(r.status, 403);
+});
+
+test('une panne de Firestore ne compte pas comme un PIN faux', async () => {
+  const ip = newIp();
+  failing.add('secrets/T28');
+  try {
+    for (let i = 0; i < 12; i++) assert.strictEqual((await verify('T28', PIN, ip)).status, 500);
+  } finally { failing.delete('secrets/T28'); }
+  assert.strictEqual((await verify('T28', PIN, ip)).ok, true);
+});
+
+test("un match en cours d'enregistrement sur un autre appareil donne un message distinct", async () => {
+  const rs = await Promise.all([submit('T29', 'T30', { set1: '6-3', set2: '6-3' }), submit('T29', 'T30', { set1: '6-3', set2: '6-3' })]);
+  const refused = rs.find((r) => !r.ok);
+  assert.ok(refused, 'un des deux envois doit être refusé');
+  assert.match(refused.error, /en cours/);
+});
+
+test("un Pi en retard sur l'heure ne prend pas un match ancien pour un doublon", async () => {
+  coll('matches').set('ancien-1', { equipeA: 'T31', equipeB: 'T32', vainqueur: 'A', scores: { set1: '6-0', set2: '6-0' }, pointsA: 1, pointsB: 1, date: new Date() });
+  await withClock(Date.now() - 20 * 60_000, async () => {
+    assert.strictEqual((await submit('T31', 'T32', { set1: '6-0', set2: '6-0' })).ok, true);
+  });
+});
+
+test("100 PIN faux sur 30 jours bloquent l'équipe même avec des bons PIN entre-temps", async () => {
+  for (let round = 0; round < 4; round++) {
+    for (const n of [10, 10, 5]) { const ip = newIp(); for (let i = 0; i < n; i++) await verify('T20', '0000', ip); }
+    if (round < 3) assert.strictEqual((await verify('T20', PIN, newIp())).ok, true);
+  }
+  const r = await verify('T20', PIN, newIp());
+  assert.strictEqual(r.status, 429);
+  assert.strictEqual(r.frozen, true);
+});
+
+test("le démarrage échoue si le port est déjà pris, au lieu de tourner à moitié", async () => {
+  const net = require('net');
+  const { startServer } = require('../server.js');
+  const blocker = await new Promise((r) => { const s = net.createServer().listen(0, '127.0.0.1', () => r(s)); });
+  const port = blocker.address().port;
+  try {
+    let servers = null, failed = false;
+    try { servers = await startServer(port, ['127.0.0.1', '127.0.0.2']); } catch (e) { failed = true; }
+    if (servers) await Promise.all(servers.map((s) => new Promise((r) => s.close(r))));
+    assert.ok(failed, 'startServer doit échouer quand 127.0.0.1 est déjà utilisé');
+  } finally { blocker.close(); }
+});
+
+test("le script de création du code admin (npm run admin-setup) fonctionne depuis le Pi", async () => {
+  const { spawn } = require('child_process');
+  const path = require('path');
+  const saved = coll('secrets').get('admin');
+  coll('secrets').delete('admin');
+  try {
+    const port = new URL(base).port;
+    const out = await new Promise((resolve) => {
+      const child = spawn(process.execPath, [path.join(__dirname, '..', 'scripts', 'admin-setup.js')], { env: { ...process.env, PORT: port } });
+      let text = '';
+      child.stdout.on('data', (d) => { text += d; });
+      child.stderr.on('data', (d) => { text += d; });
+      child.on('close', (code) => resolve({ code, text }));
+      child.stdin.end('un "code" avec des guillemets\nun "code" avec des guillemets\n');
+    });
+    assert.strictEqual(out.code, 0, out.text);
+    assert.ok(coll('secrets').has('admin'));
+    const login = await call('/admin/login', { code: 'un "code" avec des guillemets' }, newIp());
+    assert.strictEqual(login.ok, true);
+  } finally {
+    coll('secrets').set('admin', saved);
+  }
 });

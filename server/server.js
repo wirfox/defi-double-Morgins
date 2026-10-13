@@ -11,12 +11,12 @@
  *    - le PIN chiffré pour l'affichage admin        → secrets/{docId}.pinEnc
  *    - l'empreinte PBKDF2 du code admin             → secrets/admin
  *
- *  Compatibilité : les anciens appels (code admin envoyé à chaque requête,
- *  pinEnc encore sur les documents publics, empreinte admin encore dans
- *  config/admin) restent acceptés, pour que l'ancien site continue de marcher
- *  pendant la bascule. La conversion se fait toute seule, sans coupure.
+ *  La bascule de juillet 2026 est terminée : les anciens formats (code admin
+ *  envoyé à chaque requête, pinEnc sur les documents publics, empreinte admin
+ *  dans config/admin) ne sont plus acceptés.
  *
- *  Démarrage :  npm install  puis  npm start
+ *  Démarrage :  npm install  puis  npm start (sur le Pi : pm2 restart defi-double)
+ *  Tests     :  npm test (sans Firebase)
  *  Pré-requis : serviceAccountKey.json (clé de compte de service Firebase)
  *               à côté de ce fichier. Voir README.md.
  * ========================================================================== */
@@ -130,13 +130,16 @@ const SCORE_ERROR = 'Scores incohérents : set à égalité, 3ᵉ set manquant, 
 function isValidScore(s) {
   return typeof s === 'string' && /^\d{1,2}-\d{1,2}$/.test(s);
 }
+// « 06-4 » devient « 6-4 » : un même score s'écrit toujours de la même façon
+// (sinon l'anti-doublon ne le reconnaîtrait pas).
+const normalizeScore = (v) => v.split('-').map((n) => String(parseInt(n, 10))).join('-');
 function cleanScores(scores) {
   if (!scores || typeof scores !== 'object') return null;
   const { set1, set2, set3 } = scores;
   if (!isValidScore(set1) || !isValidScore(set2)) return null;
   if (set3 !== undefined && set3 !== '' && !isValidScore(set3)) return null;
-  const out = { set1, set2 };
-  if (set3) out.set3 = set3;
+  const out = { set1: normalizeScore(set1), set2: normalizeScore(set2) };
+  if (set3) out.set3 = normalizeScore(set3);
   return out;
 }
 
@@ -157,7 +160,7 @@ function cleanDrawScores(scores) {
     const a = parseInt(parts[0], 10), b = parseInt(parts[1], 10);
     if (!Number.isInteger(a) || !Number.isInteger(b) || a < 0 || b < 0) return null;
     if (a > b) setsA++; else if (b > a) setsB++;
-    out[k] = v;
+    out[k] = normalizeScore(v);
     entered++;
   }
   if (entered < 1) return null;      // au moins un set saisi
@@ -231,27 +234,32 @@ function createLimiter({ max, windowMs, maxKeys = 10_000 }) {
 }
 
 // Plafond global par IP — filet de sécurité, facilement contourné par qui
-// change d'IP, d'où le verrou par cible qui suit.
-const ipLimiter = createLimiter({ max: 60, windowMs: 60_000 });
+// change d'IP, d'où le verrou par cible qui suit. Assez large pour tout un
+// club connecté au même wifi (une seule adresse publique pour tous).
+const ipLimiter = createLimiter({ max: 120, windowMs: 60_000 });
 // Tentatives de connexion admin : beaucoup plus strict.
 const adminLoginLimiter = createLimiter({ max: 5, windowMs: 15 * 60_000 });
 
 // Verrous des PINs, à deux niveaux :
 //  - par appareil : PIN_DEVICE_MAX_FAILS PINs faux depuis une même adresse pour
-//    une même équipe / un même joueur bloquent CET appareil pendant PIN_LOCK_MS.
-//    Celui qui se trompe se bloque lui-même, sans gêner les vrais joueurs ;
-//  - par équipe / joueur : PIN_TARGET_MAX_FAILS PINs faux d'affilée, tous
-//    appareils confondus, bloquent la cible jusqu'au déblocage par l'admin
-//    (ou au redémarrage du serveur). Un bon PIN remet ce compteur à zéro.
-// Un attaquant n'a donc qu'une trentaine d'essais sur les 10 000 PINs possibles.
+//    une même équipe / un même joueur bloquent CET appareil pendant PIN_LOCK_MS
+//    à partir du dernier essai. Celui qui se trompe se bloque lui-même, sans
+//    gêner les vrais joueurs ;
+//  - par équipe / joueur, tous appareils confondus : PIN_TARGET_MAX_FAILS PINs
+//    faux d'affilée (un bon PIN remet ce compteur à zéro), ou PIN_TARGET_MAX_TOTAL
+//    PINs faux en tout sur PIN_TOTAL_WINDOW_MS, bloquent la cible jusqu'au
+//    déblocage par l'admin (ou au redémarrage du serveur).
+// Un attaquant a donc au plus 100 essais par mois sur les 10 000 PINs possibles.
 const PIN_DEVICE_MAX_FAILS = 10;
 const PIN_LOCK_MS = 15 * 60_000;
 const PIN_TARGET_MAX_FAILS = 30;
-const PIN_TARGET_FORGET_MS = 24 * 3600_000; // échecs oubliés après 24 h sans nouvel échec
+const PIN_TARGET_FORGET_MS = 24 * 3600_000;      // série d'échecs oubliée après 24 h sans nouvel échec
+const PIN_TARGET_MAX_TOTAL = 100;
+const PIN_TOTAL_WINDOW_MS = 30 * 24 * 3600_000;  // total des échecs compté sur 30 jours
 const deviceFails = new Map(); // `${docId}|${ip}` -> { count, ts }
-const targetFails = new Map(); // docId -> { count, ts }
+const targetFails = new Map(); // docId -> { count, ts, total, since }
 
-const isFrozen = (rec) => !!rec && rec.count >= PIN_TARGET_MAX_FAILS;
+const isFrozen = (rec) => !!rec && (rec.count >= PIN_TARGET_MAX_FAILS || rec.total >= PIN_TARGET_MAX_TOTAL);
 
 function deviceRecord(key, now) {
   const rec = deviceFails.get(key);
@@ -279,7 +287,7 @@ function lockInfo(docId) {
   for (const [k, rec] of deviceFails) {
     if (k.startsWith(docId + '|') && now - rec.ts <= PIN_LOCK_MS && rec.count >= PIN_DEVICE_MAX_FAILS) devicesLocked++;
   }
-  return { frozen: isFrozen(t), fails: t ? t.count : 0, devicesLocked };
+  return { frozen: isFrozen(t), fails: t ? t.count : 0, total: t ? t.total : 0, devicesLocked };
 }
 
 // Vérifie un PIN en tenant compte des deux verrous.
@@ -287,7 +295,10 @@ function lockInfo(docId) {
 async function checkPin(docId, pin, ip) {
   const now = Date.now();
   let target = targetFails.get(docId);
-  if (target && !isFrozen(target) && now - target.ts > PIN_TARGET_FORGET_MS) { targetFails.delete(docId); target = null; }
+  if (target && !isFrozen(target)) {
+    if (now - target.ts > PIN_TARGET_FORGET_MS) target.count = 0;
+    if (now - target.since > PIN_TOTAL_WINDOW_MS) { target.total = 0; target.since = now; }
+  }
   if (isFrozen(target)) return 'frozen';
   const key = docId + '|' + ip;
   let device = deviceRecord(key, now);
@@ -298,13 +309,26 @@ async function checkPin(docId, pin, ip) {
   // échec soit noté. Un bon PIN efface ensuite ces compteurs.
   if (!device) { device = { count: 0, ts: now }; deviceFails.set(key, device); }
   device.count += 1;
-  if (!target) { target = { count: 0, ts: now }; targetFails.set(docId, target); }
+  device.ts = now;
+  if (!target) { target = { count: 0, ts: now, total: 0, since: now }; targetFails.set(docId, target); }
   target.count += 1;
+  target.total += 1;
   target.ts = now;
 
-  if (await pinIsValid(docId, pin)) {
+  let valid;
+  try {
+    valid = await pinIsValid(docId, pin);
+  } catch (e) {
+    // Firestore injoignable : ce n'est pas un PIN faux, on annule l'essai.
+    device.count = Math.max(0, device.count - 1);
+    target.count = Math.max(0, target.count - 1);
+    target.total = Math.max(0, target.total - 1);
+    throw e;
+  }
+  if (valid) {
     deviceFails.delete(key);
-    targetFails.delete(docId);
+    target.count = 0;   // la série repart de zéro ; le total sur 30 jours reste
+    target.total = Math.max(0, target.total - 1); // le bon essai n'était pas un échec
     return 'ok';
   }
   return 'bad';
@@ -336,7 +360,7 @@ setInterval(() => {
   adminLoginLimiter.purge();
   const now = Date.now();
   for (const [k, rec] of deviceFails) if (now - rec.ts > PIN_LOCK_MS) deviceFails.delete(k);
-  for (const [k, rec] of targetFails) if (!isFrozen(rec) && now - rec.ts > PIN_TARGET_FORGET_MS) targetFails.delete(k);
+  for (const [k, rec] of targetFails) if (!isFrozen(rec) && now - rec.ts > PIN_TOTAL_WINDOW_MS) targetFails.delete(k);
   for (const [t, exp] of adminTokens) if (now > exp) adminTokens.delete(t);
   for (const [k, v] of submissions) if (now - v.at > DUP_WINDOW_MS) submissions.delete(k);
 }, 60_000).unref();
@@ -439,6 +463,7 @@ const submissions = new Map(); // identifiant d'envoi -> { at, response }
 const inFlight = new Set();     // matchs en cours d'écriture
 const isSubmissionId = (v) => typeof v === 'string' && /^[A-Za-z0-9_-]{6,64}$/.test(v);
 const DUP_ERROR = "Ce match est déjà enregistré (mêmes adversaires, même score, il y a moins de 10 minutes). S'il s'agit d'un autre match, demande à l'organisateur.";
+const DUP_PENDING_ERROR = "Ce match est en cours d'enregistrement depuis un autre appareil. Vérifie l'historique dans quelques secondes avant de réessayer.";
 
 // Empreinte d'un match qui ne dépend pas de l'ordre des adversaires.
 function matchKey(nameA, nameB, sc) {
@@ -454,7 +479,10 @@ async function recentDuplicate(collection, fieldA, fieldB, key) {
   const now = Date.now();
   return snap.docs.some((d) => {
     const m = d.data();
-    return now - toMillis(m.date) < DUP_WINDOW_MS && m.scores && matchKey(m[fieldA], m[fieldB], m.scores) === key;
+    const age = now - toMillis(m.date);
+    // Tolère une minute d'avance (horloges pas tout à fait à l'heure), pas plus :
+    // un Pi très en retard ne doit pas prendre de vieux matchs pour des doublons.
+    return age > -60_000 && age < DUP_WINDOW_MS && m.scores && matchKey(m[fieldA], m[fieldB], m.scores) === key;
   });
 }
 
@@ -462,7 +490,11 @@ async function recentDuplicate(collection, fieldA, fieldB, key) {
 async function writeOnce(res, { kind, collection, fieldA, fieldB, nameA, nameB, scores, sid }, write) {
   const key = matchKey(nameA, nameB, scores);
   const flightKey = kind + ':' + key;
-  if (inFlight.has(flightKey)) return res.status(409).json({ ok: false, duplicate: true, error: DUP_ERROR });
+  // Renvoi d'une saisie déjà enregistrée (réponse perdue, double appui) : même
+  // réponse, rien de réécrit — seulement si c'est bien le même match.
+  const previous = sid && submissions.get(sid);
+  if (previous && previous.key === flightKey) return res.json({ ...previous.response, duplicate: true });
+  if (inFlight.has(flightKey)) return res.status(409).json({ ok: false, duplicate: true, pending: true, error: DUP_PENDING_ERROR });
   inFlight.add(flightKey);
   try {
     if (await recentDuplicate(collection, fieldA, fieldB, key)) {
@@ -470,7 +502,7 @@ async function writeOnce(res, { kind, collection, fieldA, fieldB, nameA, nameB, 
       return res.status(409).json({ ok: false, duplicate: true, error: DUP_ERROR });
     }
     const response = await write();
-    if (sid) submissions.set(sid, { at: Date.now(), response });
+    if (sid) submissions.set(sid, { at: Date.now(), key: flightKey, response });
     return res.json(response);
   } finally {
     inFlight.delete(flightKey);
@@ -503,9 +535,7 @@ app.post('/verify-pin', async (req, res) => {
 app.post('/submit-match', async (req, res) => {
   try {
     const { teamA, pinA, teamB, pinB, scores, submissionId } = req.body || {};
-    // Renvoi d'une saisie déjà enregistrée (réponse perdue, double appui) : même réponse, rien de réécrit.
     const sid = isSubmissionId(submissionId) ? 'm:' + submissionId : null;
-    if (sid && submissions.has(sid)) return res.json({ ...submissions.get(sid).response, duplicate: true });
 
     if (teamA === teamB) return res.status(400).json({ ok: false, error: 'Une équipe ne peut pas jouer contre elle-même' });
     const sc = cleanScores(scores);
@@ -548,7 +578,6 @@ app.post('/submit-jmatch', async (req, res) => {
   try {
     const { joueurA, pinA, joueurB, pinB, scores, submissionId } = req.body || {};
     const sid = isSubmissionId(submissionId) ? 'j:' + submissionId : null;
-    if (sid && submissions.has(sid)) return res.json({ ...submissions.get(sid).response, duplicate: true });
 
     if (joueurA === joueurB) return res.status(400).json({ ok: false, error: 'Un joueur ne peut pas jouer contre lui-même' });
     const sc = cleanScores(scores);
@@ -1094,17 +1123,26 @@ setInterval(publishTunnelUrl, 60_000).unref();
 // LISTEN_HOST=0.0.0.0 rétablit l'écoute sur tout le réseau si besoin.
 const LISTEN_HOSTS = process.env.LISTEN_HOST ? [process.env.LISTEN_HOST] : ['127.0.0.1', '::1'];
 
-function startServer(port = PORT, hosts = LISTEN_HOSTS) {
-  return Promise.all(hosts.map((host) => new Promise((resolve) => {
+// Erreurs d'écoute acceptables : l'adresse n'existe pas sur cette machine (pas
+// d'IPv6). Toute autre erreur (port déjà pris…) arrête le démarrage, plutôt
+// que de laisser un serveur joignable seulement à moitié.
+const LISTEN_SKIPPABLE = new Set(['EADDRNOTAVAIL', 'EAFNOSUPPORT']);
+
+async function startServer(port = PORT, hosts = LISTEN_HOSTS) {
+  const results = await Promise.all(hosts.map((host) => new Promise((resolve) => {
     const srv = http.createServer(app);
-    // Pas d'IPv6 sur le Pi, port déjà pris… : on le signale sans tout arrêter.
-    srv.once('error', (e) => { console.error(`Écoute impossible sur ${host}:${port} (${e.code})`); resolve(null); });
-    srv.listen(port, host, () => resolve(srv));
-  }))).then((list) => {
-    const servers = list.filter(Boolean);
-    if (servers.length === 0) throw new Error(`Impossible d'écouter sur le port ${port}`);
-    return servers;
-  });
+    srv.once('error', (error) => resolve({ host, error }));
+    srv.listen(port, host, () => resolve({ host, srv }));
+  })));
+  const servers = results.filter((r) => r.srv).map((r) => r.srv);
+  const fatal = results.find((r) => r.error && !LISTEN_SKIPPABLE.has(r.error.code));
+  for (const r of results) if (r.error && !fatal) console.error(`Écoute ignorée sur ${r.host}:${port} (${r.error.code})`);
+  if (fatal || servers.length === 0) {
+    await Promise.all(servers.map((srv) => new Promise((r) => srv.close(r))));
+    const why = fatal ? `${fatal.host}:${port} (${fatal.error.code})` : `port ${port}`;
+    throw new Error(`Impossible d'écouter sur ${why}`);
+  }
+  return servers;
 }
 
 // Démarrage seulement si le fichier est lancé directement (`npm start`), pour

@@ -1603,9 +1603,9 @@
             <div style="font-size:0.85rem;color:var(--text-light);line-height:1.5;">
               <strong style="color:var(--text-dark);">Aucun code admin n'est défini.</strong>
               Par sécurité, il se crée depuis le Raspberry Pi lui-même, jamais depuis le site&nbsp;: sinon, n'importe qui pourrait le créer avant toi.
-              Connecte-toi au Pi et tape (8 caractères minimum, long et non devinable)&nbsp;:
-              <pre style="white-space:pre-wrap;word-break:break-all;background:var(--bg,#f3f4f6);padding:0.6rem;border-radius:8px;margin:0.6rem 0;font-size:0.75rem;">curl -X POST http://localhost:8080/admin/setup -H "Content-Type: application/json" -d '{"code":"TON_NOUVEAU_CODE"}'</pre>
-              Recharge ensuite cette page et connecte-toi avec ce code.
+              Connecte-toi au Pi et tape&nbsp;:
+              <pre style="white-space:pre-wrap;word-break:break-all;background:var(--bg,#f3f4f6);padding:0.6rem;border-radius:8px;margin:0.6rem 0;font-size:0.75rem;">cd ~/defi-double-Morgins/server && npm run admin-setup</pre>
+              Le code (8 à 64 caractères, long et non devinable) est demandé deux fois sans s'afficher. Recharge ensuite cette page et connecte-toi avec ce code.
             </div>
           </div>
 
@@ -1613,7 +1613,7 @@
           <div id="adminLogin">
             <div class="form-group">
               <label class="form-label">Code admin</label>
-              <input type="password" maxlength="20" class="form-input" id="adminPin"
+              <input type="password" maxlength="64" class="form-input" id="adminPin"
                      oninput="onAdminPinInput()"
                      onkeydown="if(event.key==='Enter') submitAdminCode()" autocomplete="off">
               <div class="pin-error" id="adminError"></div>
@@ -1662,12 +1662,12 @@
               rechiffrés avec le nouveau. Ne ferme pas la page pendant l'opération.
             </div>
             <div class="form-group" style="margin-bottom:0.7rem;">
-              <label class="form-label">Nouveau code (8 à 20 caractères)</label>
-              <input type="password" maxlength="20" class="form-input" id="changeAdminPin" autocomplete="off">
+              <label class="form-label">Nouveau code (8 à 64 caractères)</label>
+              <input type="password" maxlength="64" class="form-input" id="changeAdminPin" autocomplete="off">
             </div>
             <div class="form-group" style="margin-bottom:0.9rem;">
               <label class="form-label">Confirmer</label>
-              <input type="password" maxlength="20" class="form-input" id="changeAdminPin2" autocomplete="off">
+              <input type="password" maxlength="64" class="form-input" id="changeAdminPin2" autocomplete="off">
             </div>
             <button class="btn-calc" onclick="changeAdminCode()" id="changeAdminBtn">Changer le code admin</button>
             <div id="changeAdminStatus" class="save-status"></div>
@@ -1677,7 +1677,7 @@
           <div class="card">
             <div class="card-title">Saisies bloquées (trop de PIN faux)</div>
             <div style="font-size:0.8rem;color:var(--text-light);margin-bottom:0.6rem;line-height:1.45;">
-              10 PIN faux bloquent l'appareil concerné pendant 15 min. 30 PIN faux d'affilée bloquent l'équipe ou le joueur jusqu'à ce que tu le débloques ici.
+              10 PIN faux bloquent l'appareil concerné pendant 15 min. 30 PIN faux d'affilée, ou 100 sur 30 jours, bloquent l'équipe ou le joueur jusqu'à ce que tu le débloques ici.
             </div>
             <div id="adminLocksList"><!-- Rempli par JS --></div>
             <button class="btn-calc" style="margin-top:0.6rem;" onclick="renderAdminLocks()">Actualiser</button>
@@ -2032,7 +2032,7 @@
           <p>Si un message <strong>« Serveur momentanément indisponible »</strong> apparaît : pas de panique,
              attendez quelques secondes et <strong>réessayez</strong>. Si ça persiste, prévenez l'organisateur.</p>
           <p>Après <strong>10 codes PIN faux</strong>, l'appareil est bloqué pendant 15 minutes pour cette équipe : le message indique combien de temps attendre.
-             Après 30 codes faux d'affilée, la saisie de l'équipe est bloquée jusqu'à ce que l'organisateur la débloque.</p>
+             Après 30 codes faux d'affilée (ou 100 en un mois), la saisie de l'équipe est bloquée jusqu'à ce que l'organisateur la débloque.</p>
           <p>Si vous avez oublié votre code PIN, demandez à l'organisateur du tournoi.</p>
         </section>
       </div><!-- /screen-aide -->
@@ -2318,9 +2318,10 @@
         const bEmpty = p.b === '' || p.b == null;
         if (aEmpty && bEmpty) continue;            // set non rempli → ignoré
         if (aEmpty || bEmpty) return { ok: false, error: 'incomplete' };
-        const a = Number(p.a), b = Number(p.b);
-        if (!Number.isInteger(a) || !Number.isInteger(b) || a < 0 || b < 0 || a > 99 || b > 99)
+        // Uniquement des chiffres (0 à 99) : « 6.0 », « 1e1 » ou « -0 » sont refusés, comme sur le serveur.
+        if (!/^\d{1,2}$/.test(String(p.a).trim()) || !/^\d{1,2}$/.test(String(p.b).trim()))
           return { ok: false, error: 'incomplete' };
+        const a = Number(p.a), b = Number(p.b);
         if (a === b) return { ok: false, error: 'tie' };
         setWinners.push(a > b ? 'A' : 'B');
       }
@@ -2386,8 +2387,9 @@
 
     // Construit l'objet scores {set1:'a-b', ...} à partir des paires (pour l'envoi serveur).
     function pairsToScores(vals, has3) {
-      const out = { set1: `${vals[1].a}-${vals[1].b}`, set2: `${vals[2].a}-${vals[2].b}` };
-      if (has3 && vals[3] && vals[3].a !== '' && vals[3].b !== '') out.set3 = `${vals[3].a}-${vals[3].b}`;
+      const set = (v) => `${Number(v.a)}-${Number(v.b)}`; // « 06 » devient « 6 »
+      const out = { set1: set(vals[1]), set2: set(vals[2]) };
+      if (has3 && vals[3] && vals[3].a !== '' && vals[3].b !== '') out.set3 = set(vals[3]);
       return out;
     }
 
@@ -3008,6 +3010,7 @@
       try { data = await res.json(); } catch (e) { return 'unreachable'; }
       // Trop de PIN faux : le serveur explique quoi faire (attendre ou demander à l'organisateur).
       if (res.status === 429 && data.locked) return { locked: data.error || 'Trop de PIN faux. Demande à l\'organisateur.' };
+      if (res.status === 429) return { locked: 'Trop de requêtes depuis ce réseau. Réessaie dans une minute.' };
       if (!res.ok) return 'unreachable';
       return data.ok ? 'ok' : 'wrong';
     }
@@ -3393,9 +3396,9 @@
       status.className = 'save-status'; status.textContent = '';
 
       if (!state.adminCode) { status.className = 'save-status error'; status.textContent = 'Reconnecte-toi à l\'admin.'; return; }
-      if (p1.length < 8 || p1.length > 20) {
+      if (p1.length < 8 || p1.length > 64) {
         status.className = 'save-status error';
-        status.textContent = 'Le code doit faire entre 8 et 20 caractères.';
+        status.textContent = 'Le code doit faire entre 8 et 64 caractères.';
         return;
       }
       if (p1 !== p2) {
@@ -3476,7 +3479,7 @@
       if (!r.locks || r.locks.length === 0) { wrap.innerHTML = '<div class="empty-state">Aucune saisie bloquée.</div>'; return; }
       wrap.innerHTML = r.locks.map(l => {
         const detail = l.frozen
-          ? `Bloqué jusqu'au déblocage · ${num(l.fails)} PIN faux d'affilée`
+          ? `Bloqué jusqu'au déblocage · ${num(l.fails)} PIN faux d'affilée, ${num(l.total)} sur 30 jours`
           : `${num(l.devicesLocked)} appareil${l.devicesLocked > 1 ? 's' : ''} bloqué${l.devicesLocked > 1 ? 's' : ''} pour 15 min`;
         return `
           <div class="admin-pin-row" style="grid-template-columns:1fr auto;">

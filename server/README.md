@@ -75,6 +75,11 @@ cours de route.
 > Firestore > Importer/Exporter). Rien dans cette procédure n'efface de
 > données, mais une sauvegarde ne coûte rien.
 
+> ✅ Les étapes 1 à 4 ont été faites (juillet et octobre 2026). Elles restent ici pour l'historique.
+
+> ✅ Les étapes 1 à 4 ont été faites (juillet et octobre 2026) : elles restent ici pour l'historique.
+> Pour mettre le Pi à jour aujourd'hui : `cd ~/defi-double-Morgins && git pull && cd server && npm install && pm2 restart defi-double`.
+
 **Étape 1 — mettre à jour le Pi (aucune coupure)**
 
 ```bash
@@ -180,12 +185,16 @@ sur tout le réseau local).
 
 > ⚠️ **Si tu perds le code admin** : supprime le document `secrets/admin` dans
 > la console Firebase, puis, **sur le Raspberry Pi**, crée le nouveau code
-> (8 caractères minimum) :
+> (8 à 64 caractères, demandé deux fois sans s'afficher) :
 >
 > ```bash
-> curl -X POST http://localhost:8080/admin/setup -H "Content-Type: application/json" \
->   -d '{"code":"TON_NOUVEAU_CODE"}'
+> cd ~/defi-double-Morgins/server && npm run admin-setup
 > ```
+>
+> Les PINs chiffrés avec l'ancien code ne sont plus lisibles dans l'admin :
+> retape-les avec « Modifier » (les mêmes si tu les as encore, sinon de
+> nouveaux à redonner aux équipes). La vérification des PINs, elle, continue
+> de marcher.
 >
 > Par sécurité, le serveur refuse de créer le code admin depuis le site ou
 > depuis un autre appareil : personne ne peut donc prendre ta place pendant
