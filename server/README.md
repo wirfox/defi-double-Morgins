@@ -151,7 +151,7 @@ via `/admin/login`), soit `adminCode` (compatibilité).
 | POST | `/submit-match` | Enregistrer un match adulte (vérifie 2 PINs, calcule les points) |
 | POST | `/submit-jmatch` | Enregistrer un match junior |
 | POST | `/admin/login` | Se connecter et obtenir un jeton de session |
-| POST | `/admin/setup` | Définir le tout premier code admin |
+| POST | `/admin/setup` | Définir le tout premier code admin (depuis le Pi uniquement) |
 | POST | `/admin/change-code` | Changer le code admin (rechiffre les PINs) |
 | POST | `/admin/pins` | Lire les PINs chiffrés (affichage admin) |
 | POST | `/admin/set-pin` | Définir/changer le PIN d'une équipe/joueur |
@@ -159,6 +159,8 @@ via `/admin/login`), soit `adminCode` (compatibilité).
 | POST | `/admin/delete-team` · `/admin/delete-junior` | Supprimer une équipe / un joueur |
 | POST | `/admin/delete-match` · `/admin/delete-jmatch` | Supprimer un match |
 | POST | `/admin/set-green` | Basculer la catégorie verte d'un junior |
+| POST | `/admin/locks` | Lister les saisies bloquées (trop de PIN faux) |
+| POST | `/admin/unlock-pin` | Débloquer la saisie de PIN d'une équipe / d'un joueur |
 | POST | `/admin/edit-match` · `/admin/edit-jmatch` | Corriger un score (points recalculés) |
 | POST | `/admin/migrate` · `/admin/migrate-pinenc` | Migrations (rejouables) |
 | POST | `/admin/cleanup-hashes` | Retirer les champs sensibles des documents publics |
@@ -170,5 +172,25 @@ directement, sans tunnel Cloudflare),
 `SETUP_TOKEN` (si défini, exigé pour créer le tout premier code admin).
 
 > ⚠️ **Si tu perds le code admin** : supprime le document `secrets/admin` dans
-> la console Firebase, puis rouvre l'admin sur le site — il te proposera d'en
-> définir un nouveau.
+> la console Firebase, puis, **sur le Raspberry Pi**, crée le nouveau code
+> (8 caractères minimum) :
+>
+> ```bash
+> curl -X POST http://localhost:8080/admin/setup -H "Content-Type: application/json" \
+>   -d '{"code":"TON_NOUVEAU_CODE"}'
+> ```
+>
+> Par sécurité, le serveur refuse de créer le code admin depuis le site ou
+> depuis un autre appareil : personne ne peut donc prendre ta place pendant
+> la procédure. Recharge ensuite l'admin sur le site et connecte-toi.
+
+## Tests
+
+Les tests du serveur tournent sans Firebase (une fausse base en mémoire remplace
+Firestore) :
+
+```bash
+cd server
+npm install
+npm test
+```
