@@ -341,34 +341,21 @@ setInterval(() => {
   for (const [k, v] of submissions) if (now - v.at > DUP_WINDOW_MS) submissions.delete(k);
 }, 60_000).unref();
 
-// Vérifie le code admin. Nouveau format : secrets/admin (PBKDF2 salé).
-// Ancien format accepté en repli (config/admin.pinHash, SHA-256 non salé) puis
-// converti automatiquement → personne ne peut se retrouver enfermé dehors.
+// Vérifie le code admin : empreinte PBKDF2 salée rangée dans secrets/admin.
+// (L'ancien format, config/admin.pinHash en SHA-256, n'est plus accepté : la
+// bascule de juillet 2026 est terminée.)
 async function adminCodeIsValid(code) {
-  if (typeof code !== 'string' || code.length < 6 || code.length > 200) return false;
-
-  const ref = db.collection('secrets').doc('admin');
-  const snap = await ref.get();
-  if (snap.exists && snap.data().hash) {
-    const rec = snap.data();
-    const computed = await pbkdf2(code, rec.salt, rec.iterations || PBKDF2_ITERATIONS);
-    return safeEqual(computed, rec.hash);
-  }
-
-  const legacy = await db.collection('config').doc('admin').get();
-  if (!legacy.exists || typeof legacy.data().pinHash !== 'string') return false;
-  if (!safeEqual(sha256(code), legacy.data().pinHash)) return false;
-
-  await ref.set({ ...(await buildAdminRecord(code)), updatedAt: FieldValue.serverTimestamp() });
-  console.log('[admin] ancien code converti au format PBKDF2 (secrets/admin)');
-  return true;
+  if (typeof code !== 'string' || code.length < 8 || code.length > 200) return false;
+  const snap = await db.collection('secrets').doc('admin').get();
+  if (!snap.exists || !snap.data().hash) return false;
+  const rec = snap.data();
+  const computed = await pbkdf2(code, rec.salt, rec.iterations || PBKDF2_ITERATIONS);
+  return safeEqual(computed, rec.hash);
 }
 
 async function adminExists() {
   const s = await db.collection('secrets').doc('admin').get();
-  if (s.exists && s.data().hash) return true;
-  const legacy = await db.collection('config').doc('admin').get();
-  return legacy.exists && typeof legacy.data().pinHash === 'string';
+  return s.exists && !!s.data().hash;
 }
 
 // Une adresse IPv6 change facilement (un abonné en reçoit des milliards) : on
@@ -403,27 +390,13 @@ function fromPiItself(req) {
   return a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1';
 }
 
-// Garde d'accès admin : accepte un jeton de session (nouveau site) ou le code
-// admin en clair (ancien site, le temps de la bascule). Répond elle-même en
-// cas de refus ; l'appelant s'arrête si elle renvoie false.
+// Garde d'accès admin : exige le jeton de session obtenu via /admin/login.
+// Le code admin lui-même ne circule donc qu'à la connexion. Répond elle-même
+// en cas de refus ; l'appelant s'arrête si elle renvoie false.
 async function requireAdmin(req, res) {
-  const { adminToken, adminCode } = req.body || {};
+  const { adminToken } = req.body || {};
   if (adminTokenIsValid(adminToken)) return true;
-
-  const ip = clientIp(req);
-  if (!adminLoginLimiter.allow(ip)) {
-    res.status(429).json({ ok: false, error: 'Trop de tentatives. Réessaie dans 15 minutes.' });
-    return false;
-  }
-  if (await adminCodeIsValid(adminCode)) {
-    // Seuls les échecs doivent consommer le quota : sinon un admin légitime
-    // enchaînant des actions (l'ancien site renvoie son code à chaque appel)
-    // se ferait bloquer au bout de cinq requêtes.
-    adminLoginLimiter.reset(ip);
-    return true;
-  }
-
-  res.status(403).json({ ok: false, error: 'Code admin invalide' });
+  res.status(403).json({ ok: false, error: 'Session admin expirée : reconnecte-toi.' });
   return false;
 }
 
@@ -804,8 +777,7 @@ app.post('/admin/pins', async (req, res) => {
       const snap = await db.collection(coll).get();
       for (const doc of snap.docs) {
         const secret = await db.collection('secrets').doc(doc.id).get();
-        // Repli sur l'ancien emplacement tant que le nettoyage n'a pas tourné.
-        const pinEnc = (secret.exists && secret.data().pinEnc) || doc.data().pinEnc || null;
+        const pinEnc = (secret.exists && secret.data().pinEnc) || null;
         out[coll].push({ id: doc.id, name: doc.data().name, pinEnc });
       }
     }

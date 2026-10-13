@@ -2409,9 +2409,9 @@
       messagingSenderId: "404273525812",
       appId:             "1:404273525812:web:b26add3a1dd8f12f498661"
     };
-    // Le code admin n'est PAS stocké dans le source.
-    // Son hash SHA-256 est stocké dans Firestore (doc config/admin).
-    // À la première utilisation, l'utilisateur le définit via l'app.
+    // Le code admin n'est PAS stocké dans le source : son empreinte (PBKDF2)
+    // est gardée par le serveur dans secrets/admin, illisible depuis le site.
+    // Il se crée depuis le Raspberry Pi (voir server/README.md).
 
     // ─────── INIT ───────
     let db = null;
@@ -2440,7 +2440,7 @@
       },
 
       // Junior
-      juniorsLive:        [],          // [{id, name, green, stars, pinHash, pinEnc}]
+      juniorsLive:        [],          // [{id, name, green, stars}]
       juniorsMatchesLive: [],          // [{id, joueurA, joueurB, vainqueur, score, starsA, starsB, greenBalls, date}]
       jSort:              'stars',     // 'stars' | 'alpha'
       jProfile:           null,
@@ -3519,12 +3519,10 @@
       // Déchiffrement de chaque PIN via le code admin en mémoire
       const decrypted = [];
       for (const t of state.teamsLive) {
-        // Repli sur le document public tant que la migration n'a pas tourné.
-        const enc = encMap[t.id] || t.pinEnc;
+        const enc = encMap[t.id];
         let plain = '????';
         try {
-          if (enc)           plain = await decryptWithCode(enc, state.adminCode);
-          else if (t.pin)    plain = t.pin; // compat ancien format
+          if (enc) plain = await decryptWithCode(enc, state.adminCode);
         } catch (e) {
           plain = '⚠ erreur';
         }
@@ -4437,11 +4435,10 @@
       }
       const decrypted = [];
       for (const j of state.juniorsLive) {
-        const enc = encMap[j.id] || j.pinEnc;
+        const enc = encMap[j.id];
         let plain = '????';
         try {
-          if (enc)        plain = await decryptWithCode(enc, state.adminCode);
-          else if (j.pin) plain = j.pin;
+          if (enc) plain = await decryptWithCode(enc, state.adminCode);
         } catch (e) { plain = '⚠ erreur'; }
         decrypted.push({ ...j, plainPin: plain });
       }

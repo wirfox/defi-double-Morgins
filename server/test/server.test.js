@@ -273,3 +273,32 @@ test("le serveur n'écoute que sur le Pi lui-même, en IPv4 et en IPv6", async (
     await Promise.all(servers.map((s) => new Promise((r) => s.close(r))));
   }
 });
+
+// ---------- Fin des chemins de compatibilité (point 8) ----------
+test("les actions admin exigent le jeton de connexion : le code admin seul ne suffit plus", async () => {
+  const r = await call('/admin/locks', { adminCode: 'un-code-admin-solide' }, newIp());
+  assert.strictEqual(r.status, 403);
+  const ok = await call('/admin/locks', { adminToken: token }, newIp());
+  assert.strictEqual(ok.ok, true);
+});
+
+test("l'ancien format du code admin (config/admin) n'est plus accepté", async () => {
+  const saved = coll('secrets').get('admin');
+  coll('secrets').delete('admin');
+  coll('config').set('admin', { pinHash: sha('ancien-code-admin') });
+  try {
+    const r = await call('/admin/login', { code: 'ancien-code-admin' }, newIp());
+    assert.strictEqual(r.status, 403);
+    assert.strictEqual(coll('secrets').has('admin'), false, "l'ancien code ne doit pas être converti");
+  } finally {
+    coll('config').delete('admin');
+    coll('secrets').set('admin', saved);
+  }
+});
+
+test('la liste des PIN chiffrés ne relit plus les fiches publiques des équipes', async () => {
+  coll('teams').set('T20', { ...coll('teams').get('T20'), pinEnc: 'ab'.repeat(20) }); // reste d'avant la migration
+  const r = await call('/admin/pins', { adminToken: token }, newIp());
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.teams.find((t) => t.id === 'T20').pinEnc, null);
+});

@@ -97,6 +97,10 @@ rangé dans la zone privée). Aucun risque de te retrouver bloqué dehors.
 
 **Étape 3 — déplacer les PINs chiffrés hors des documents publics**
 
+> ✅ Faite en octobre 2026. Depuis, les actions admin exigent le jeton de connexion
+> (`adminToken` obtenu via `/admin/login`) : les commandes ci-dessous avec `adminCode`
+> ne fonctionnent plus et ne sont gardées que pour l'historique.
+
 ```bash
 curl -X POST https://TON-URL/admin/migrate-pinenc -H "Content-Type: application/json" \
   -d '{"adminCode":"TON_CODE_ADMIN"}'
@@ -140,8 +144,8 @@ rechiffrés automatiquement au passage.
 
 ## Endpoints (pour info)
 
-Les endpoints `/admin/*` acceptent soit `adminToken` (jeton de session obtenu
-via `/admin/login`), soit `adminCode` (compatibilité).
+Les endpoints `/admin/*` exigent `adminToken`, le jeton de session obtenu via
+`/admin/login` (valable 8 h, perdu au redémarrage du serveur).
 
 | Méthode | Chemin | Rôle |
 |--------|--------|------|
