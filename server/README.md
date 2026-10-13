@@ -169,7 +169,10 @@ Variables d'environnement optionnelles : `PORT` (défaut 8080),
 `ALLOWED_ORIGIN` (défaut `https://wirfox.github.io`),
 `TRUST_CF_HEADER` (défaut activé — mettre `0` si le serveur est exposé
 directement, sans tunnel Cloudflare),
-`SETUP_TOKEN` (si défini, exigé pour créer le tout premier code admin).
+`SETUP_TOKEN` (si défini, exigé pour créer le tout premier code admin),
+`LISTEN_HOST` (par défaut, le serveur n'écoute que le Pi lui-même, `127.0.0.1` et `::1`,
+pour que le tunnel soit la seule porte d'entrée ; `LISTEN_HOST=0.0.0.0` rétablit l'écoute
+sur tout le réseau local).
 
 > ⚠️ **Si tu perds le code admin** : supprime le document `secrets/admin` dans
 > la console Firebase, puis, **sur le Raspberry Pi**, crée le nouveau code

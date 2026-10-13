@@ -1114,14 +1114,35 @@ async function publishTunnelUrl() {
 setTimeout(publishTunnelUrl, 4000).unref();
 setInterval(publishTunnelUrl, 60_000).unref();
 
-// Démarrage seulement si le fichier est lancé directement (`npm start`), pour
-// qu'il puisse aussi être chargé par les tests sans ouvrir de port.
-if (require.main === module) {
-  app.listen(PORT, () => {
-    console.log(`Serveur Défi Double démarré sur le port ${PORT}`);
-    console.log(`Origine autorisée : ${ALLOWED_ORIGIN}`);
-    console.log(`IP client lue depuis : ${TRUST_CF_HEADER ? 'CF-Connecting-IP (tunnel Cloudflare)' : 'la connexion directe'}`);
+// Le serveur n'écoute que le Pi lui-même : le tunnel Cloudflare tourne sur le Pi
+// et s'y connecte par localhost, en IPv4 (127.0.0.1) ou en IPv6 (::1) selon le
+// système — on écoute donc les deux. Les autres appareils du réseau local ne
+// peuvent plus lui parler directement : sinon ils pourraient se faire passer
+// pour plusieurs appareils avec un faux en-tête CF-Connecting-IP.
+// LISTEN_HOST=0.0.0.0 rétablit l'écoute sur tout le réseau si besoin.
+const LISTEN_HOSTS = process.env.LISTEN_HOST ? [process.env.LISTEN_HOST] : ['127.0.0.1', '::1'];
+
+function startServer(port = PORT, hosts = LISTEN_HOSTS) {
+  return Promise.all(hosts.map((host) => new Promise((resolve) => {
+    const srv = http.createServer(app);
+    // Pas d'IPv6 sur le Pi, port déjà pris… : on le signale sans tout arrêter.
+    srv.once('error', (e) => { console.error(`Écoute impossible sur ${host}:${port} (${e.code})`); resolve(null); });
+    srv.listen(port, host, () => resolve(srv));
+  }))).then((list) => {
+    const servers = list.filter(Boolean);
+    if (servers.length === 0) throw new Error(`Impossible d'écouter sur le port ${port}`);
+    return servers;
   });
 }
 
-module.exports = { app, computePoints, deriveWinner, cleanScores, cleanDrawScores, cleanName, isPinEnc };
+// Démarrage seulement si le fichier est lancé directement (`npm start`), pour
+// qu'il puisse aussi être chargé par les tests sans ouvrir de port.
+if (require.main === module) {
+  startServer().then((servers) => {
+    console.log(`Serveur Défi Double démarré sur le port ${PORT} (écoute : ${servers.map((s) => s.address().address).join(', ')})`);
+    console.log(`Origine autorisée : ${ALLOWED_ORIGIN}`);
+    console.log(`IP client lue depuis : ${TRUST_CF_HEADER ? 'CF-Connecting-IP (tunnel Cloudflare)' : 'la connexion directe'}`);
+  }).catch((e) => { console.error(e.message); process.exit(1); });
+}
+
+module.exports = { app, startServer, computePoints, deriveWinner, cleanScores, cleanDrawScores, cleanName, isPinEnc };

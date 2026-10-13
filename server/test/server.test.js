@@ -251,3 +251,25 @@ test('juniors : anti-doublon et contrôle des scores', async () => {
   assert.strictEqual((await sj({ set1: '4-1', set2: '4-2' })).status, 409);
   assert.strictEqual(matchCount('juniors_matches'), before + 1);
 });
+
+// ---------- Écoute limitée au Pi lui-même (point 7) ----------
+test("le serveur n'écoute que sur le Pi lui-même, en IPv4 et en IPv6", async () => {
+  const net = require('net');
+  const os = require('os');
+  const { startServer } = require('../server.js');
+  const port = await new Promise((r) => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => r(p)); }); });
+  const servers = await startServer(port);
+  try {
+    const health = async (host) => (await fetch(`http://${host}:${port}/health`)).status;
+    assert.strictEqual(await health('127.0.0.1'), 200);
+    const hasIPv6Loopback = Object.values(os.networkInterfaces()).flat().some((i) => i && i.address === '::1');
+    if (hasIPv6Loopback) assert.strictEqual(await health('[::1]'), 200);
+    const lan = Object.values(os.networkInterfaces()).flat().find((i) => i && i.family === 'IPv4' && !i.internal);
+    if (lan) {
+      const refused = await new Promise((r) => { const c = net.connect(port, lan.address); c.once('connect', () => { c.destroy(); r(false); }); c.once('error', () => r(true)); });
+      assert.ok(refused, `le serveur ne doit pas répondre sur ${lan.address}`);
+    }
+  } finally {
+    await Promise.all(servers.map((s) => new Promise((r) => s.close(r))));
+  }
+});
