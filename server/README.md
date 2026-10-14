@@ -227,6 +227,21 @@ node scripts/backup-restore.js <fichier> --apply --mode overwrite   # remet auss
 - Une sauvegarde d'un autre projet Firebase est refusée.
 - Dans cron, mets le chemin complet de node (`which node`) : cron ne connaît pas le même PATH que toi.
 
+### Si le Pi est perdu : déchiffrer la copie OneDrive depuis un PC Windows
+
+Il suffit de rclone (rclone.org/downloads), des deux mots de passe du chiffrement
+(mot de passe + salt) et de `scripts/dechiffrer-sauvegarde.ps1` (à télécharger depuis GitHub) :
+
+1. Sur onedrive.com, télécharge les fichiers de `Sauvegardes/defi-double` **sans les renommer**
+   (leur nom illisible est chiffré lui aussi), dans un dossier, par exemple `Downloads\chiffre`.
+2. Dans PowerShell, dans le dossier de rclone ou du script :
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\dechiffrer-sauvegarde.ps1 -Source C:\Users\Moi\Downloads\chiffre
+   ```
+3. Les mots de passe sont demandés masqués. Les fichiers déchiffrés arrivent dans un dossier
+   `dechiffre-…` à côté de la source, et les `.json.gz` sont décompressés en `.json`.
+
+
 ## Tests
 
 Les tests du serveur tournent sans Firebase (une fausse base en mémoire remplace
