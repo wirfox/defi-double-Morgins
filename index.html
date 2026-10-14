@@ -1598,29 +1598,22 @@
         <div class="card" id="adminLock">
           <div class="card-title" id="adminLockTitle">Accès administrateur</div>
 
-          <!-- Première utilisation : choisir un code -->
+          <!-- Première utilisation : le code admin se crée depuis le Pi -->
           <div id="adminSetup" class="hidden">
-            <div style="font-size:0.85rem;color:var(--text-light);margin-bottom:0.9rem;line-height:1.5;">
-              <strong style="color:var(--text-dark);">Première utilisation.</strong>
-              Choisis ton code admin (8 à 20 caractères). Son empreinte est calculée et gardée par le serveur (PBKDF2 salé) : elle n'est jamais lisible depuis le navigateur, ni présente dans le code source. Prends un code long et non devinable — c'est la clé de tout le tournoi.
+            <div style="font-size:0.85rem;color:var(--text-light);line-height:1.5;">
+              <strong style="color:var(--text-dark);">Aucun code admin n'est défini.</strong>
+              Par sécurité, il se crée depuis le Raspberry Pi lui-même, jamais depuis le site&nbsp;: sinon, n'importe qui pourrait le créer avant toi.
+              Connecte-toi au Pi et tape&nbsp;:
+              <pre style="white-space:pre-wrap;word-break:break-all;background:var(--bg,#f3f4f6);padding:0.6rem;border-radius:8px;margin:0.6rem 0;font-size:0.75rem;">cd ~/defi-double-Morgins/server && npm run admin-setup</pre>
+              Le code (8 à 64 caractères, long et non devinable) est demandé deux fois sans s'afficher. Recharge ensuite cette page et connecte-toi avec ce code.
             </div>
-            <div class="form-group" style="margin-bottom: 0.9rem;">
-              <label class="form-label">Nouveau code admin</label>
-              <input type="password" maxlength="20" class="form-input" id="newAdminPin" autocomplete="off">
-            </div>
-            <div class="form-group" style="margin-bottom: 0.9rem;">
-              <label class="form-label">Confirmer</label>
-              <input type="password" maxlength="20" class="form-input" id="newAdminPin2" autocomplete="off">
-            </div>
-            <button class="btn-calc" onclick="setupAdmin()" id="setupBtn">Enregistrer le code admin</button>
-            <div class="save-status" id="setupStatus"></div>
           </div>
 
           <!-- Connexion normale -->
           <div id="adminLogin">
             <div class="form-group">
               <label class="form-label">Code admin</label>
-              <input type="password" maxlength="20" class="form-input" id="adminPin"
+              <input type="password" maxlength="64" class="form-input" id="adminPin"
                      oninput="onAdminPinInput()"
                      onkeydown="if(event.key==='Enter') submitAdminCode()" autocomplete="off">
               <div class="pin-error" id="adminError"></div>
@@ -1669,15 +1662,25 @@
               rechiffrés avec le nouveau. Ne ferme pas la page pendant l'opération.
             </div>
             <div class="form-group" style="margin-bottom:0.7rem;">
-              <label class="form-label">Nouveau code (8 à 20 caractères)</label>
-              <input type="password" maxlength="20" class="form-input" id="changeAdminPin" autocomplete="off">
+              <label class="form-label">Nouveau code (8 à 64 caractères)</label>
+              <input type="password" maxlength="64" class="form-input" id="changeAdminPin" autocomplete="off">
             </div>
             <div class="form-group" style="margin-bottom:0.9rem;">
               <label class="form-label">Confirmer</label>
-              <input type="password" maxlength="20" class="form-input" id="changeAdminPin2" autocomplete="off">
+              <input type="password" maxlength="64" class="form-input" id="changeAdminPin2" autocomplete="off">
             </div>
             <button class="btn-calc" onclick="changeAdminCode()" id="changeAdminBtn">Changer le code admin</button>
             <div id="changeAdminStatus" class="save-status"></div>
+          </div>
+
+          <!-- Saisies bloquées (trop de PIN faux) -->
+          <div class="card">
+            <div class="card-title">Saisies bloquées (trop de PIN faux)</div>
+            <div style="font-size:0.8rem;color:var(--text-light);margin-bottom:0.6rem;line-height:1.45;">
+              10 PIN faux bloquent l'appareil concerné pendant 15 min. 30 PIN faux d'affilée, ou 100 sur 30 jours, bloquent l'équipe ou le joueur jusqu'à ce que tu le débloques ici.
+            </div>
+            <div id="adminLocksList"><!-- Rempli par JS --></div>
+            <button class="btn-calc" style="margin-top:0.6rem;" onclick="renderAdminLocks()">Actualiser</button>
           </div>
 
           <!-- Gestion des PINs -->
@@ -2028,6 +2031,8 @@
           <h2>7 · En cas de souci</h2>
           <p>Si un message <strong>« Serveur momentanément indisponible »</strong> apparaît : pas de panique,
              attendez quelques secondes et <strong>réessayez</strong>. Si ça persiste, prévenez l'organisateur.</p>
+          <p>Après <strong>10 codes PIN faux</strong>, l'appareil est bloqué pendant 15 minutes pour cette équipe : le message indique combien de temps attendre.
+             Après 30 codes faux d'affilée (ou 100 en un mois), la saisie de l'équipe est bloquée jusqu'à ce que l'organisateur la débloque.</p>
           <p>Si vous avez oublié votre code PIN, demandez à l'organisateur du tournoi.</p>
         </section>
       </div><!-- /screen-aide -->
@@ -2307,28 +2312,34 @@
     // Déduit le vainqueur ('A'/'B') à partir des paires de jeux saisies.
     // pairs : [{a,b}, ...] (chaînes). Renvoie {ok, winner, threeSet} ou {ok:false, error}.
     function deriveWinnerFromPairs(pairs) {
-      let setsA = 0, setsB = 0, entered = 0;
+      const setWinners = [];
       for (const p of pairs) {
         const aEmpty = p.a === '' || p.a == null;
         const bEmpty = p.b === '' || p.b == null;
         if (aEmpty && bEmpty) continue;            // set non rempli → ignoré
         if (aEmpty || bEmpty) return { ok: false, error: 'incomplete' };
-        const a = Number(p.a), b = Number(p.b);
-        if (!Number.isInteger(a) || !Number.isInteger(b) || a < 0 || b < 0)
+        // Uniquement des chiffres (0 à 99) : « 6.0 », « 1e1 » ou « -0 » sont refusés, comme sur le serveur.
+        if (!/^\d{1,2}$/.test(String(p.a).trim()) || !/^\d{1,2}$/.test(String(p.b).trim()))
           return { ok: false, error: 'incomplete' };
-        entered++;
+        const a = Number(p.a), b = Number(p.b);
         if (a === b) return { ok: false, error: 'tie' };
-        if (a > b) setsA++; else setsB++;
+        setWinners.push(a > b ? 'A' : 'B');
       }
-      if (entered < 2) return { ok: false, error: 'incomplete' };
+      if (setWinners.length < 2) return { ok: false, error: 'incomplete' };
+      // Même règle que le serveur : pas de 3ᵉ set quand le match est déjà gagné 2-0.
+      if (setWinners.length === 3 && setWinners[0] === setWinners[1]) return { ok: false, error: 'useless3' };
+      const setsA = setWinners.filter(w => w === 'A').length;
+      const setsB = setWinners.length - setsA;
       if (setsA === setsB) return { ok: false, error: 'equal' };
-      return { ok: true, winner: setsA > setsB ? 'A' : 'B', threeSet: entered === 3 };
+      return { ok: true, winner: setsA > setsB ? 'A' : 'B', threeSet: setWinners.length === 3 };
     }
     const SCORE_ERR = {
       incomplete: 'Renseigne les jeux des deux côtés pour chaque set joué.',
       tie:        'Un set ne peut pas finir à égalité. Corrige les scores.',
-      equal:      'Égalité (1 set partout) : ajoute le 3ᵉ set pour départager.'
+      equal:      'Égalité (1 set partout) : ajoute le 3ᵉ set pour départager.',
+      useless3:   'Le match est déjà gagné 2-0 : retire le 3ᵉ set.'
     };
+    const SCORE_WARN = new Set(['tie', 'useless3']); // erreurs affichées en orange
 
     // Construit le HTML des sets (2 cases par set, étiquetées avec les noms).
     // prefix : préfixe unique des id (ex. 'r', 'j', 'e', 'ej').
@@ -2376,8 +2387,9 @@
 
     // Construit l'objet scores {set1:'a-b', ...} à partir des paires (pour l'envoi serveur).
     function pairsToScores(vals, has3) {
-      const out = { set1: `${vals[1].a}-${vals[1].b}`, set2: `${vals[2].a}-${vals[2].b}` };
-      if (has3 && vals[3] && vals[3].a !== '' && vals[3].b !== '') out.set3 = `${vals[3].a}-${vals[3].b}`;
+      const set = (v) => `${Number(v.a)}-${Number(v.b)}`; // « 06 » devient « 6 »
+      const out = { set1: set(vals[1]), set2: set(vals[2]) };
+      if (has3 && vals[3] && vals[3].a !== '' && vals[3].b !== '') out.set3 = set(vals[3]);
       return out;
     }
 
@@ -2399,9 +2411,9 @@
       messagingSenderId: "404273525812",
       appId:             "1:404273525812:web:b26add3a1dd8f12f498661"
     };
-    // Le code admin n'est PAS stocké dans le source.
-    // Son hash SHA-256 est stocké dans Firestore (doc config/admin).
-    // À la première utilisation, l'utilisateur le définit via l'app.
+    // Le code admin n'est PAS stocké dans le source : son empreinte (PBKDF2)
+    // est gardée par le serveur dans secrets/admin, illisible depuis le site.
+    // Il se crée depuis le Raspberry Pi (voir server/README.md).
 
     // ─────── INIT ───────
     let db = null;
@@ -2430,7 +2442,7 @@
       },
 
       // Junior
-      juniorsLive:        [],          // [{id, name, green, stars, pinHash, pinEnc}]
+      juniorsLive:        [],          // [{id, name, green, stars}]
       juniorsMatchesLive: [],          // [{id, joueurA, joueurB, vainqueur, score, starsA, starsB, greenBalls, date}]
       jSort:              'stars',     // 'stars' | 'alpha'
       jProfile:           null,
@@ -2479,6 +2491,14 @@
       try { data = await res.json(); } catch (e) {}
       if (!res.ok || !data.ok) throw new Error(data.error || ('Erreur serveur (' + res.status + ')'));
       return data;
+    }
+
+    // Identifiant unique d'une saisie de match : si elle est renvoyée (coupure
+    // réseau, double appui), le serveur reconnaît l'identifiant et ne
+    // l'enregistre pas une deuxième fois.
+    function newSubmissionId() {
+      if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+      return Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
     }
 
     // Appel GET au serveur Pi.
@@ -2930,9 +2950,7 @@
         state.result.pinAok = false;
         $('pinStatusA').className = 'pin-status error';
         $('pinStatusA').innerHTML = '✕';
-        $('pinErrorA').textContent = st === 'unreachable'
-          ? 'Serveur momentanément indisponible. Réessaie dans un instant.'
-          : 'Code PIN incorrect.';
+        $('pinErrorA').textContent = pinErrorText(st);
         $('step-2').classList.add('hidden');
       }
       updateStepIndicator();
@@ -2969,17 +2987,15 @@
         state.result.pinBok = false;
         $('pinStatusB').className = 'pin-status error';
         $('pinStatusB').innerHTML = '✕';
-        $('pinErrorB').textContent = st === 'unreachable'
-          ? 'Serveur momentanément indisponible. Réessaie dans un instant.'
-          : 'Code PIN incorrect.';
+        $('pinErrorB').textContent = pinErrorText(st);
         $('step-3').classList.add('hidden');
       }
       updateStepIndicator();
     }
 
     // Vérifie un PIN via le serveur (Pi). Renvoie 'ok' (correct), 'wrong'
-    // (incorrect) ou 'unreachable' (serveur injoignable) — pour distinguer
-    // "PIN faux" d'un "serveur momentanément indisponible".
+    // (incorrect), 'unreachable' (serveur injoignable) ou { locked: message }
+    // (trop de PIN faux) — pour ne pas confondre un blocage avec une panne.
     async function checkPinStatus(scope, name, pin) {
       if (!PI_URL) return 'unreachable';
       let res;
@@ -2990,10 +3006,21 @@
           body: JSON.stringify({ scope, name, pin: String(pin) })
         });
       } catch (e) { return 'unreachable'; }
-      if (!res.ok) return 'unreachable';
       let data = {};
       try { data = await res.json(); } catch (e) { return 'unreachable'; }
+      // Trop de PIN faux : le serveur explique quoi faire (attendre ou demander à l'organisateur).
+      if (res.status === 429 && data.locked) return { locked: data.error || 'Trop de PIN faux. Demande à l\'organisateur.' };
+      if (res.status === 429) return { locked: 'Trop de requêtes depuis ce réseau. Réessaie dans une minute.' };
+      if (!res.ok) return 'unreachable';
       return data.ok ? 'ok' : 'wrong';
+    }
+
+    // Message à afficher sous la case PIN quand le PIN n'est pas accepté.
+    function pinErrorText(st) {
+      if (st && st.locked) return st.locked;
+      return st === 'unreachable'
+        ? 'Serveur momentanément indisponible. Réessaie dans un instant.'
+        : 'Code PIN incorrect.';
     }
 
     async function verifyPin(teamName, pin) {
@@ -3039,7 +3066,7 @@
       if (!res.ok) {
         const anything = pairs.some(p => (p.a !== '' && p.a != null) || (p.b !== '' && p.b != null));
         out.innerHTML = anything
-          ? `<div class="score-note ${res.error === 'tie' ? 'warn' : 'info'}">${res.error === 'tie' ? '⚠️ ' : ''}${SCORE_ERR[res.error]}</div>`
+          ? `<div class="score-note ${SCORE_WARN.has(res.error) ? 'warn' : 'info'}">${SCORE_WARN.has(res.error) ? '⚠️ ' : ''}${SCORE_ERR[res.error]}</div>`
           : '';
         return;
       }
@@ -3116,21 +3143,24 @@
         // Le serveur (Pi) vérifie les 2 PINs, REDÉDUIT le vainqueur des scores,
         // calcule les points lui-même et écrit le match. Impossible de forger
         // un match, de gonfler les points, ni d'entrer un score « à l'envers ».
+        // Même identifiant si la saisie est renvoyée : le serveur ne l'enregistre qu'une fois.
+        state.result.submissionId = state.result.submissionId || newSubmissionId();
         const r = await piPost('/submit-match', {
           teamA: tA.name, pinA: $('pinA').value,
           teamB: tB.name, pinB: $('pinB').value,
           winner: res.winner,
-          scores
+          scores,
+          submissionId: state.result.submissionId
         });
 
         status.className = 'save-status ok';
         status.innerHTML = `✓ Match enregistré · ${escapeHtml(tA.name)} +${num(r.pointsA)} · ${escapeHtml(tB.name)} +${num(r.pointsB)}`;
-        setTimeout(() => { resetResultForm(); }, 2500);
+        // Le bouton reste bloqué jusqu'à la remise à zéro : pas de second envoi du même match.
+        setTimeout(() => { resetResultForm(); $('saveBtn').disabled = false; }, 2500);
       } catch (e) {
         console.error(e);
         status.className = 'save-status error';
         status.textContent = 'Erreur : ' + e.message;
-      } finally {
         $('saveBtn').disabled = false;
       }
     }
@@ -3215,10 +3245,7 @@
       state.adminCode = null;  // sécurité : on oublie le code à chaque accès
       state.adminToken = null;
       $('adminPin').value = '';
-      $('newAdminPin').value = '';
-      $('newAdminPin2').value = '';
       $('adminError').textContent = '';
-      $('setupStatus').textContent = ''; $('setupStatus').className = 'save-status';
       $('adminLock').classList.remove('hidden');
       $('adminPanel').classList.add('hidden');
 
@@ -3251,44 +3278,6 @@
         $('adminSetup').classList.add('hidden');
         $('adminLogin').classList.remove('hidden');
         $('adminError').textContent = e.message;
-      }
-    }
-
-    async function setupAdmin() {
-      const p1 = $('newAdminPin').value.trim();
-      const p2 = $('newAdminPin2').value.trim();
-      const status = $('setupStatus');
-      status.className = 'save-status'; status.textContent = '';
-
-      // 8 caractères minimum : l'empreinte n'est plus publique, mais un code
-      // court reste le maillon faible de tout le système.
-      if (p1.length < 8 || p1.length > 20) {
-        status.className = 'save-status error';
-        status.textContent = 'Le code doit faire entre 8 et 20 caractères.';
-        return;
-      }
-      if (p1 !== p2) {
-        status.className = 'save-status error';
-        status.textContent = 'Les deux codes ne correspondent pas.';
-        return;
-      }
-
-      $('setupBtn').disabled = true;
-      status.textContent = 'Enregistrement…';
-      try {
-        // L'empreinte est calculée et stockée par le serveur (PBKDF2 salé),
-        // dans une zone que le navigateur ne peut pas lire.
-        const r = await piPost('/admin/setup', { code: p1 });
-        status.className = 'save-status ok';
-        status.textContent = '✓ Code admin enregistré. Connexion…';
-        // Auto-login avec le code qu'on vient de définir
-        setTimeout(() => unlockAdminPanel(p1, r.token), 1500);
-      } catch (e) {
-        console.error(e);
-        status.className = 'save-status error';
-        status.textContent = 'Erreur : ' + e.message;
-      } finally {
-        $('setupBtn').disabled = false;
       }
     }
 
@@ -3333,6 +3322,7 @@
       state.adminToken = token || null;
       $('adminLock').classList.add('hidden');
       $('adminPanel').classList.remove('hidden');
+      renderAdminLocks();
       // Adulte
       renderAdminPins();
       renderAdminMatches();
@@ -3406,9 +3396,9 @@
       status.className = 'save-status'; status.textContent = '';
 
       if (!state.adminCode) { status.className = 'save-status error'; status.textContent = 'Reconnecte-toi à l\'admin.'; return; }
-      if (p1.length < 8 || p1.length > 20) {
+      if (p1.length < 8 || p1.length > 64) {
         status.className = 'save-status error';
-        status.textContent = 'Le code doit faire entre 8 et 20 caractères.';
+        status.textContent = 'Le code doit faire entre 8 et 64 caractères.';
         return;
       }
       if (p1 !== p2) {
@@ -3478,6 +3468,35 @@
       return pinEncCache;
     }
 
+    // ─── Saisies bloquées (trop de PIN faux) ───
+    async function renderAdminLocks() {
+      const wrap = $('adminLocksList');
+      if (!wrap) return;
+      wrap.innerHTML = '<div class="loading-state">Chargement…</div>';
+      let r;
+      try { r = await piAdmin('/admin/locks'); }
+      catch (e) { wrap.innerHTML = '<div class="save-status error">Erreur : ' + escapeHtml(e.message) + '</div>'; return; }
+      if (!r.locks || r.locks.length === 0) { wrap.innerHTML = '<div class="empty-state">Aucune saisie bloquée.</div>'; return; }
+      wrap.innerHTML = r.locks.map(l => {
+        const detail = l.frozen
+          ? `Bloqué jusqu'au déblocage · ${num(l.fails)} PIN faux d'affilée, ${num(l.total)} sur 30 jours`
+          : `${num(l.devicesLocked)} appareil${l.devicesLocked > 1 ? 's' : ''} bloqué${l.devicesLocked > 1 ? 's' : ''} pour 15 min`;
+        return `
+          <div class="admin-pin-row" style="grid-template-columns:1fr auto;">
+            <div>${escapeHtml(l.name)}${l.scope === 'junior' ? ' · junior' : ''}
+              <div style="font-size:0.72rem;color:var(--text-light);">${detail}</div>
+            </div>
+            <div class="admin-pin-actions"><button data-id="${escapeHtml(l.id)}" onclick="unlockPin(this.dataset.id)">Débloquer</button></div>
+          </div>`;
+      }).join('');
+    }
+
+    async function unlockPin(id) {
+      try { await piAdmin('/admin/unlock-pin', { id }); }
+      catch (e) { alert('Erreur : ' + e.message); return; }
+      renderAdminLocks();
+    }
+
     async function renderAdminPins() {
       const wrap = $('adminPinsList');
       if (!wrap) return;
@@ -3503,12 +3522,10 @@
       // Déchiffrement de chaque PIN via le code admin en mémoire
       const decrypted = [];
       for (const t of state.teamsLive) {
-        // Repli sur le document public tant que la migration n'a pas tourné.
-        const enc = encMap[t.id] || t.pinEnc;
+        const enc = encMap[t.id];
         let plain = '????';
         try {
-          if (enc)           plain = await decryptWithCode(enc, state.adminCode);
-          else if (t.pin)    plain = t.pin; // compat ancien format
+          if (enc) plain = await decryptWithCode(enc, state.adminCode);
         } catch (e) {
           plain = '⚠ erreur';
         }
@@ -3622,7 +3639,7 @@
       if (editHas3) pairs.push(editScores[3]);
       const res = deriveWinnerFromPairs(pairs);
       if (!res.ok) {
-        out.innerHTML = `<div class="score-note ${res.error === 'tie' ? 'warn' : 'info'}">${res.error === 'tie' ? '⚠️ ' : ''}${SCORE_ERR[res.error]}</div>`;
+        out.innerHTML = `<div class="score-note ${SCORE_WARN.has(res.error) ? 'warn' : 'info'}">${SCORE_WARN.has(res.error) ? '⚠️ ' : ''}${SCORE_ERR[res.error]}</div>`;
         if (btn) btn.disabled = true;
         return;
       }
@@ -4168,9 +4185,7 @@
       } else {
         state.jResult.pinAok = false;
         $('jpinStatusA').className = 'pin-status error'; $('jpinStatusA').innerHTML = '✕';
-        $('jpinErrorA').textContent = st === 'unreachable'
-          ? 'Serveur momentanément indisponible. Réessaie dans un instant.'
-          : 'Code PIN incorrect.';
+        $('jpinErrorA').textContent = pinErrorText(st);
         $('jstep-2').classList.add('hidden');
       }
       updateJStepIndicator();
@@ -4209,9 +4224,7 @@
       } else {
         state.jResult.pinBok = false;
         $('jpinStatusB').className = 'pin-status error'; $('jpinStatusB').innerHTML = '✕';
-        $('jpinErrorB').textContent = st === 'unreachable'
-          ? 'Serveur momentanément indisponible. Réessaie dans un instant.'
-          : 'Code PIN incorrect.';
+        $('jpinErrorB').textContent = pinErrorText(st);
         $('jstep-3').classList.add('hidden');
       }
       updateJStepIndicator();
@@ -4233,7 +4246,7 @@
       if (!res.ok) {
         const anything = pairs.some(p => (p.a !== '' && p.a != null) || (p.b !== '' && p.b != null));
         out.innerHTML = anything
-          ? `<div class="score-note ${res.error === 'tie' ? 'warn' : 'info'}">${res.error === 'tie' ? '⚠️ ' : ''}${SCORE_ERR[res.error]}</div>`
+          ? `<div class="score-note ${SCORE_WARN.has(res.error) ? 'warn' : 'info'}">${SCORE_WARN.has(res.error) ? '⚠️ ' : ''}${SCORE_ERR[res.error]}</div>`
           : '';
         return;
       }
@@ -4287,21 +4300,22 @@
       try {
         // Le serveur (Pi) vérifie les 2 PINs, REDÉDUIT le vainqueur des scores,
         // calcule les étoiles + balles vertes et écrit le match.
+        state.jResult.submissionId = state.jResult.submissionId || newSubmissionId();
         const r = await piPost('/submit-jmatch', {
           joueurA: jA.name, pinA: $('jpinA').value,
           joueurB: jB.name, pinB: $('jpinB').value,
           winner: res.winner,
-          scores
+          scores,
+          submissionId: state.jResult.submissionId
         });
 
         status.className = 'save-status ok';
         status.innerHTML = `✓ Match enregistré · ${escapeHtml(jA.name)} +${num(r.starsA)}⭐ · ${escapeHtml(jB.name)} +${num(r.starsB)}⭐`;
-        setTimeout(() => resetJResultForm(), 2500);
+        setTimeout(() => { resetJResultForm(); $('jsaveBtn').disabled = false; }, 2500);
       } catch (e) {
         console.error(e);
         status.className = 'save-status error';
         status.textContent = 'Erreur : ' + e.message;
-      } finally {
         $('jsaveBtn').disabled = false;
       }
     }
@@ -4424,11 +4438,10 @@
       }
       const decrypted = [];
       for (const j of state.juniorsLive) {
-        const enc = encMap[j.id] || j.pinEnc;
+        const enc = encMap[j.id];
         let plain = '????';
         try {
-          if (enc)        plain = await decryptWithCode(enc, state.adminCode);
-          else if (j.pin) plain = j.pin;
+          if (enc) plain = await decryptWithCode(enc, state.adminCode);
         } catch (e) { plain = '⚠ erreur'; }
         decrypted.push({ ...j, plainPin: plain });
       }

@@ -5,7 +5,9 @@
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test test/server.test.js",
+    "admin-setup": "node scripts/admin-setup.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

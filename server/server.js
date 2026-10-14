@@ -11,12 +11,12 @@
  *    - le PIN chiffré pour l'affichage admin        → secrets/{docId}.pinEnc
  *    - l'empreinte PBKDF2 du code admin             → secrets/admin
  *
- *  Compatibilité : les anciens appels (code admin envoyé à chaque requête,
- *  pinEnc encore sur les documents publics, empreinte admin encore dans
- *  config/admin) restent acceptés, pour que l'ancien site continue de marcher
- *  pendant la bascule. La conversion se fait toute seule, sans coupure.
+ *  La bascule de juillet 2026 est terminée : les anciens formats (code admin
+ *  envoyé à chaque requête, pinEnc sur les documents publics, empreinte admin
+ *  dans config/admin) ne sont plus acceptés.
  *
- *  Démarrage :  npm install  puis  npm start
+ *  Démarrage :  npm install  puis  npm start (sur le Pi : pm2 restart defi-double)
+ *  Tests     :  npm test (sans Firebase)
  *  Pré-requis : serviceAccountKey.json (clé de compte de service Firebase)
  *               à côté de ce fichier. Voir README.md.
  * ========================================================================== */
@@ -101,11 +101,12 @@ function computePoints(coteA, coteB, winner, threeSet) {
 }
 
 // Déduit le vainqueur ('A'/'B') à partir des scores "a-b" (a = jeux équipe A).
-// Renvoie null si incohérent (set à égalité, 1 set partout, scores incomplets)
-// → le serveur refuse alors le match. C'est la garantie « pas de score à l'envers » :
-// le vainqueur n'est jamais cru sur parole, il est recalculé à partir des sets.
+// Renvoie null si incohérent (set à égalité, 1 set partout, scores incomplets,
+// 3ᵉ set alors que le match était déjà gagné 2-0) → le serveur refuse alors le
+// match. C'est la garantie « pas de score à l'envers » : le vainqueur n'est
+// jamais cru sur parole, il est recalculé à partir des sets.
 function deriveWinner(scores) {
-  let setsA = 0, setsB = 0, entered = 0;
+  const setWinners = [];
   for (const k of ['set1', 'set2', 'set3']) {
     const v = scores[k];
     if (v === undefined || v === '') continue;
@@ -113,23 +114,32 @@ function deriveWinner(scores) {
     if (parts.length !== 2) return null;
     const a = parseInt(parts[0], 10), b = parseInt(parts[1], 10);
     if (!Number.isInteger(a) || !Number.isInteger(b) || a < 0 || b < 0 || a === b) return null;
-    entered++;
-    if (a > b) setsA++; else setsB++;
+    setWinners.push(a > b ? 'A' : 'B');
   }
-  if (entered < 2 || setsA === setsB) return null;
+  if (setWinners.length < 2) return null;
+  // Un faux 3ᵉ set après un 2-0 donnerait le bonus « 3 sets » au perdant.
+  if (setWinners.length === 3 && setWinners[0] === setWinners[1]) return null;
+  const setsA = setWinners.filter((w) => w === 'A').length;
+  const setsB = setWinners.length - setsA;
+  if (setsA === setsB) return null;
   return setsA > setsB ? 'A' : 'B';
 }
+const SCORE_ERROR = 'Scores incohérents : set à égalité, 3ᵉ set manquant, ou 3ᵉ set alors que le match était déjà gagné 2-0.';
 
+// Un score de set = des jeux de 0 à 99 de chaque côté (« 6-4 », super tie-break « 10-8 »).
 function isValidScore(s) {
-  return typeof s === 'string' && s.length >= 1 && s.length <= 12;
+  return typeof s === 'string' && /^\d{1,2}-\d{1,2}$/.test(s);
 }
+// « 06-4 » devient « 6-4 » : un même score s'écrit toujours de la même façon
+// (sinon l'anti-doublon ne le reconnaîtrait pas).
+const normalizeScore = (v) => v.split('-').map((n) => String(parseInt(n, 10))).join('-');
 function cleanScores(scores) {
   if (!scores || typeof scores !== 'object') return null;
   const { set1, set2, set3 } = scores;
   if (!isValidScore(set1) || !isValidScore(set2)) return null;
   if (set3 !== undefined && set3 !== '' && !isValidScore(set3)) return null;
-  const out = { set1, set2 };
-  if (set3) out.set3 = set3;
+  const out = { set1: normalizeScore(set1), set2: normalizeScore(set2) };
+  if (set3) out.set3 = normalizeScore(set3);
   return out;
 }
 
@@ -150,7 +160,7 @@ function cleanDrawScores(scores) {
     const a = parseInt(parts[0], 10), b = parseInt(parts[1], 10);
     if (!Number.isInteger(a) || !Number.isInteger(b) || a < 0 || b < 0) return null;
     if (a > b) setsA++; else if (b > a) setsB++;
-    out[k] = v;
+    out[k] = normalizeScore(v);
     entered++;
   }
   if (entered < 1) return null;      // au moins un set saisi
@@ -224,39 +234,103 @@ function createLimiter({ max, windowMs, maxKeys = 10_000 }) {
 }
 
 // Plafond global par IP — filet de sécurité, facilement contourné par qui
-// change d'IP, d'où le verrou par cible qui suit.
-const ipLimiter = createLimiter({ max: 60, windowMs: 60_000 });
+// change d'IP, d'où le verrou par cible qui suit. Assez large pour tout un
+// club connecté au même wifi (une seule adresse publique pour tous).
+const ipLimiter = createLimiter({ max: 120, windowMs: 60_000 });
 // Tentatives de connexion admin : beaucoup plus strict.
 const adminLoginLimiter = createLimiter({ max: 5, windowMs: 15 * 60_000 });
 
-// Verrou par cible : au bout de PIN_MAX_FAILS PINs faux pour une même équipe /
-// un même joueur, cette cible est bloquée pendant PIN_LOCK_MS — quelle que
-// soit l'IP de l'attaquant. C'est ce qui rend inatteignables les 10 000
-// combinaisons d'un PIN à 4 chiffres.
-const PIN_MAX_FAILS = 10;
+// Verrous des PINs, à deux niveaux :
+//  - par appareil : PIN_DEVICE_MAX_FAILS PINs faux depuis une même adresse pour
+//    une même équipe / un même joueur bloquent CET appareil pendant PIN_LOCK_MS
+//    à partir du dernier essai. Celui qui se trompe se bloque lui-même, sans
+//    gêner les vrais joueurs ;
+//  - par équipe / joueur, tous appareils confondus : PIN_TARGET_MAX_FAILS PINs
+//    faux d'affilée (un bon PIN remet ce compteur à zéro), ou PIN_TARGET_MAX_TOTAL
+//    PINs faux en tout sur PIN_TOTAL_WINDOW_MS, bloquent la cible jusqu'au
+//    déblocage par l'admin (ou au redémarrage du serveur).
+// Un attaquant a donc au plus 100 essais par mois sur les 10 000 PINs possibles.
+const PIN_DEVICE_MAX_FAILS = 10;
 const PIN_LOCK_MS = 15 * 60_000;
-const pinFails = new Map(); // docId -> { count, ts }
+const PIN_TARGET_MAX_FAILS = 30;
+const PIN_TARGET_FORGET_MS = 24 * 3600_000;      // série d'échecs oubliée après 24 h sans nouvel échec
+const PIN_TARGET_MAX_TOTAL = 100;
+const PIN_TOTAL_WINDOW_MS = 30 * 24 * 3600_000;  // total des échecs compté sur 30 jours
+const deviceFails = new Map(); // `${docId}|${ip}` -> { count, ts }
+const targetFails = new Map(); // docId -> { count, ts, total, since }
 
-function pinTargetLocked(docId) {
-  const rec = pinFails.get(docId);
-  if (!rec) return false;
-  if (Date.now() - rec.ts > PIN_LOCK_MS) { pinFails.delete(docId); return false; }
-  return rec.count >= PIN_MAX_FAILS;
+const isFrozen = (rec) => !!rec && (rec.count >= PIN_TARGET_MAX_FAILS || rec.total >= PIN_TARGET_MAX_TOTAL);
+
+function deviceRecord(key, now) {
+  const rec = deviceFails.get(key);
+  if (rec && now - rec.ts > PIN_LOCK_MS) { deviceFails.delete(key); return null; }
+  return rec || null;
 }
-function pinTargetFail(docId) {
+
+// Minutes restantes avant qu'un appareil bloqué puisse réessayer.
+function deviceRetryMinutes(docId, ip) {
+  const rec = deviceFails.get(docId + '|' + ip);
+  if (!rec) return 1;
+  return Math.max(1, Math.ceil((rec.ts + PIN_LOCK_MS - Date.now()) / 60_000));
+}
+
+function pinLocksReset(docId) {
+  targetFails.delete(docId);
+  for (const k of deviceFails.keys()) if (k.startsWith(docId + '|')) deviceFails.delete(k);
+}
+
+// État des verrous d'une cible, pour l'écran admin.
+function lockInfo(docId) {
   const now = Date.now();
-  const rec = pinFails.get(docId);
-  if (!rec || now - rec.ts > PIN_LOCK_MS) pinFails.set(docId, { count: 1, ts: now });
-  else rec.count += 1;
+  const t = targetFails.get(docId);
+  let devicesLocked = 0;
+  for (const [k, rec] of deviceFails) {
+    if (k.startsWith(docId + '|') && now - rec.ts <= PIN_LOCK_MS && rec.count >= PIN_DEVICE_MAX_FAILS) devicesLocked++;
+  }
+  return { frozen: isFrozen(t), fails: t ? t.count : 0, total: t ? t.total : 0, devicesLocked };
 }
-function pinTargetReset(docId) { pinFails.delete(docId); }
 
-// Vérifie un PIN en tenant compte du verrou par cible.
-// Renvoie 'ok' | 'bad' | 'locked'.
-async function checkPin(docId, pin) {
-  if (pinTargetLocked(docId)) return 'locked';
-  if (await pinIsValid(docId, pin)) { pinTargetReset(docId); return 'ok'; }
-  pinTargetFail(docId);
+// Vérifie un PIN en tenant compte des deux verrous.
+// Renvoie 'ok' | 'bad' | 'locked' (cet appareil) | 'frozen' (toute la cible).
+async function checkPin(docId, pin, ip) {
+  const now = Date.now();
+  let target = targetFails.get(docId);
+  if (target && !isFrozen(target)) {
+    if (now - target.ts > PIN_TARGET_FORGET_MS) target.count = 0;
+    if (now - target.since > PIN_TOTAL_WINDOW_MS) { target.total = 0; target.since = now; }
+  }
+  if (isFrozen(target)) return 'frozen';
+  const key = docId + '|' + ip;
+  let device = deviceRecord(key, now);
+  if (device && device.count >= PIN_DEVICE_MAX_FAILS) return 'locked';
+
+  // L'essai est compté AVANT d'interroger Firestore : sinon des essais envoyés
+  // en même temps passeraient tous le contrôle ci-dessus avant que le premier
+  // échec soit noté. Un bon PIN efface ensuite ces compteurs.
+  if (!device) { device = { count: 0, ts: now }; deviceFails.set(key, device); }
+  device.count += 1;
+  device.ts = now;
+  if (!target) { target = { count: 0, ts: now, total: 0, since: now }; targetFails.set(docId, target); }
+  target.count += 1;
+  target.total += 1;
+  target.ts = now;
+
+  let valid;
+  try {
+    valid = await pinIsValid(docId, pin);
+  } catch (e) {
+    // Firestore injoignable : ce n'est pas un PIN faux, on annule l'essai.
+    device.count = Math.max(0, device.count - 1);
+    target.count = Math.max(0, target.count - 1);
+    target.total = Math.max(0, target.total - 1);
+    throw e;
+  }
+  if (valid) {
+    deviceFails.delete(key);
+    target.count = 0;   // la série repart de zéro ; le total sur 30 jours reste
+    target.total = Math.max(0, target.total - 1); // le bon essai n'était pas un échec
+    return 'ok';
+  }
   return 'bad';
 }
 
@@ -285,69 +359,68 @@ setInterval(() => {
   ipLimiter.purge();
   adminLoginLimiter.purge();
   const now = Date.now();
-  for (const [k, rec] of pinFails) if (now - rec.ts > PIN_LOCK_MS) pinFails.delete(k);
+  for (const [k, rec] of deviceFails) if (now - rec.ts > PIN_LOCK_MS) deviceFails.delete(k);
+  for (const [k, rec] of targetFails) if (!isFrozen(rec) && now - rec.ts > PIN_TOTAL_WINDOW_MS) targetFails.delete(k);
   for (const [t, exp] of adminTokens) if (now > exp) adminTokens.delete(t);
+  for (const [k, v] of submissions) if (now - v.at > DUP_WINDOW_MS) submissions.delete(k);
 }, 60_000).unref();
 
-// Vérifie le code admin. Nouveau format : secrets/admin (PBKDF2 salé).
-// Ancien format accepté en repli (config/admin.pinHash, SHA-256 non salé) puis
-// converti automatiquement → personne ne peut se retrouver enfermé dehors.
+// Vérifie le code admin : empreinte PBKDF2 salée rangée dans secrets/admin.
+// (L'ancien format, config/admin.pinHash en SHA-256, n'est plus accepté : la
+// bascule de juillet 2026 est terminée.)
 async function adminCodeIsValid(code) {
-  if (typeof code !== 'string' || code.length < 6 || code.length > 200) return false;
-
-  const ref = db.collection('secrets').doc('admin');
-  const snap = await ref.get();
-  if (snap.exists && snap.data().hash) {
-    const rec = snap.data();
-    const computed = await pbkdf2(code, rec.salt, rec.iterations || PBKDF2_ITERATIONS);
-    return safeEqual(computed, rec.hash);
-  }
-
-  const legacy = await db.collection('config').doc('admin').get();
-  if (!legacy.exists || typeof legacy.data().pinHash !== 'string') return false;
-  if (!safeEqual(sha256(code), legacy.data().pinHash)) return false;
-
-  await ref.set({ ...(await buildAdminRecord(code)), updatedAt: FieldValue.serverTimestamp() });
-  console.log('[admin] ancien code converti au format PBKDF2 (secrets/admin)');
-  return true;
+  if (typeof code !== 'string' || code.length < 8 || code.length > 200) return false;
+  const snap = await db.collection('secrets').doc('admin').get();
+  if (!snap.exists || !snap.data().hash) return false;
+  const rec = snap.data();
+  const computed = await pbkdf2(code, rec.salt, rec.iterations || PBKDF2_ITERATIONS);
+  return safeEqual(computed, rec.hash);
 }
 
 async function adminExists() {
   const s = await db.collection('secrets').doc('admin').get();
-  if (s.exists && s.data().hash) return true;
-  const legacy = await db.collection('config').doc('admin').get();
-  return legacy.exists && typeof legacy.data().pinHash === 'string';
+  return s.exists && !!s.data().hash;
+}
+
+// Une adresse IPv6 change facilement (un abonné en reçoit des milliards) : on
+// regroupe donc par bloc /64, qui correspond à une box ou à un téléphone.
+function ipBucket(ip) {
+  if (typeof ip !== 'string' || !ip) return 'unknown';
+  const mapped = ip.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i);
+  if (mapped) return mapped[1];
+  if (!ip.includes(':')) return ip;
+  const [head, tail = ''] = ip.split('%')[0].split('::');
+  const h = head ? head.split(':') : [];
+  const t = tail ? tail.split(':') : [];
+  const groups = ip.includes('::') ? [...h, ...Array(Math.max(0, 8 - h.length - t.length)).fill('0'), ...t] : h;
+  return groups.slice(0, 4).map((g) => (g.toLowerCase().replace(/^0+(?=.)/, ''))).join(':') + '::/64';
 }
 
 function clientIp(req) {
   if (TRUST_CF_HEADER) {
     const cf = req.headers['cf-connecting-ip'];
-    if (typeof cf === 'string' && cf.trim()) return cf.trim();
+    if (typeof cf === 'string' && cf.trim()) return ipBucket(cf.trim());
   }
-  return req.socket.remoteAddress || 'unknown';
+  return ipBucket(req.socket.remoteAddress || 'unknown');
 }
 
-// Garde d'accès admin : accepte un jeton de session (nouveau site) ou le code
-// admin en clair (ancien site, le temps de la bascule). Répond elle-même en
-// cas de refus ; l'appelant s'arrête si elle renvoie false.
+// Vrai seulement pour une commande lancée sur le Pi lui-même (curl localhost) :
+// tout ce qui vient d'Internet passe par le tunnel, qui ajoute toujours
+// l'en-tête CF-Connecting-IP, et un appareil du réseau local n'a pas une
+// adresse 127.0.0.1.
+function fromPiItself(req) {
+  if (req.headers['cf-connecting-ip'] !== undefined) return false;
+  const a = req.socket.remoteAddress || '';
+  return a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1';
+}
+
+// Garde d'accès admin : exige le jeton de session obtenu via /admin/login.
+// Le code admin lui-même ne circule donc qu'à la connexion. Répond elle-même
+// en cas de refus ; l'appelant s'arrête si elle renvoie false.
 async function requireAdmin(req, res) {
-  const { adminToken, adminCode } = req.body || {};
+  const { adminToken } = req.body || {};
   if (adminTokenIsValid(adminToken)) return true;
-
-  const ip = clientIp(req);
-  if (!adminLoginLimiter.allow(ip)) {
-    res.status(429).json({ ok: false, error: 'Trop de tentatives. Réessaie dans 15 minutes.' });
-    return false;
-  }
-  if (await adminCodeIsValid(adminCode)) {
-    // Seuls les échecs doivent consommer le quota : sinon un admin légitime
-    // enchaînant des actions (l'ancien site renvoie son code à chaque appel)
-    // se ferait bloquer au bout de cinq requêtes.
-    adminLoginLimiter.reset(ip);
-    return true;
-  }
-
-  res.status(403).json({ ok: false, error: 'Code admin invalide' });
+  res.status(403).json({ ok: false, error: 'Session admin expirée : reconnecte-toi.' });
   return false;
 }
 
@@ -368,6 +441,74 @@ app.use((req, res, next) => {
 
 app.get('/health', (req, res) => res.json({ ok: true, service: 'defi-double-pin-server' }));
 
+// Réponse quand un PIN est bloqué, ou null s'il ne l'est pas.
+// `who` : « cette équipe », « ce joueur » ou le nom entre guillemets.
+function pinLockError(verdict, docId, ip, who) {
+  if (verdict === 'frozen') {
+    return { ok: false, locked: true, frozen: true,
+      error: `Trop de PIN faux pour ${who} : la saisie est bloquée. Demande à l'organisateur de la débloquer.` };
+  }
+  if (verdict === 'locked') {
+    return { ok: false, locked: true,
+      error: `Trop de PIN faux pour ${who} depuis cet appareil. Réessaie dans ${deviceRetryMinutes(docId, ip)} min, ou demande à l'organisateur.` };
+  }
+  return null;
+}
+
+// --- Anti-doublon ----------------------------------------------------------
+// Un même match ne doit être enregistré qu'une fois : double appui, renvoi
+// après une coupure réseau, ou les deux équipes qui le saisissent chacune.
+const DUP_WINDOW_MS = 10 * 60_000;
+const submissions = new Map(); // identifiant d'envoi -> { at, response }
+const inFlight = new Set();     // matchs en cours d'écriture
+const isSubmissionId = (v) => typeof v === 'string' && /^[A-Za-z0-9_-]{6,64}$/.test(v);
+const DUP_ERROR = "Ce match est déjà enregistré (mêmes adversaires, même score, il y a moins de 10 minutes). S'il s'agit d'un autre match, demande à l'organisateur.";
+const DUP_PENDING_ERROR = "Ce match est en cours d'enregistrement depuis un autre appareil. Vérifie l'historique dans quelques secondes avant de réessayer.";
+
+// Empreinte d'un match qui ne dépend pas de l'ordre des adversaires.
+function matchKey(nameA, nameB, sc) {
+  const sets = ['set1', 'set2', 'set3'].filter((k) => sc[k]).map((k) => String(sc[k]));
+  if (nameA <= nameB) return JSON.stringify([nameA, nameB, sets]);
+  return JSON.stringify([nameB, nameA, sets.map((v) => v.split('-').reverse().join('-'))]);
+}
+const toMillis = (d) => (!d ? 0 : typeof d.toMillis === 'function' ? d.toMillis() : new Date(d).getTime());
+
+// Le même match a-t-il été enregistré il y a moins de DUP_WINDOW_MS ?
+async function recentDuplicate(collection, fieldA, fieldB, key) {
+  const snap = await db.collection(collection).orderBy('date', 'desc').limit(20).get();
+  const now = Date.now();
+  return snap.docs.some((d) => {
+    const m = d.data();
+    const age = now - toMillis(m.date);
+    // Tolère une minute d'avance (horloges pas tout à fait à l'heure), pas plus :
+    // un Pi très en retard ne doit pas prendre de vieux matchs pour des doublons.
+    return age > -60_000 && age < DUP_WINDOW_MS && m.scores && matchKey(m[fieldA], m[fieldB], m.scores) === key;
+  });
+}
+
+// Écrit un match une seule fois. `write` fait l'écriture et renvoie la réponse.
+async function writeOnce(res, { kind, collection, fieldA, fieldB, nameA, nameB, scores, sid }, write) {
+  const key = matchKey(nameA, nameB, scores);
+  const flightKey = kind + ':' + key;
+  // Renvoi d'une saisie déjà enregistrée (réponse perdue, double appui) : même
+  // réponse, rien de réécrit — seulement si c'est bien le même match.
+  const previous = sid && submissions.get(sid);
+  if (previous && previous.key === flightKey) return res.json({ ...previous.response, duplicate: true });
+  if (inFlight.has(flightKey)) return res.status(409).json({ ok: false, duplicate: true, pending: true, error: DUP_PENDING_ERROR });
+  inFlight.add(flightKey);
+  try {
+    if (await recentDuplicate(collection, fieldA, fieldB, key)) {
+      console.log(`[${kind}] doublon refusé : ${nameA} vs ${nameB}`);
+      return res.status(409).json({ ok: false, duplicate: true, error: DUP_ERROR });
+    }
+    const response = await write();
+    if (sid) submissions.set(sid, { at: Date.now(), key: flightKey, response });
+    return res.json(response);
+  } finally {
+    inFlight.delete(flightKey);
+  }
+}
+
 // Vérification d'un PIN (utilisée par les étapes de saisie, pour le retour à l'écran)
 app.post('/verify-pin', async (req, res) => {
   try {
@@ -375,10 +516,12 @@ app.post('/verify-pin', async (req, res) => {
     const collection = scope === 'junior' ? 'juniors' : 'teams';
     const doc = await findByName(collection, name);
     if (!doc) return res.json({ ok: false });
-    const verdict = await checkPin(doc.id, pin);
-    if (verdict === 'locked') {
-      console.log(`[verify-pin] ${collection} "${name}" -> BLOQUÉ (trop d'essais)`);
-      return res.status(429).json({ ok: false, locked: true, error: 'Trop de PINs faux pour cette équipe. Réessaie dans 15 minutes.' });
+    const ip = clientIp(req);
+    const verdict = await checkPin(doc.id, pin, ip);
+    const lock = pinLockError(verdict, doc.id, ip, scope === 'junior' ? 'ce joueur' : 'cette équipe');
+    if (lock) {
+      console.log(`[verify-pin] ${collection} "${name}" -> BLOQUÉ (${verdict === 'frozen' ? "jusqu'au déblocage par l'admin" : 'cet appareil'})`);
+      return res.status(429).json(lock);
     }
     console.log(`[verify-pin] ${collection} "${name}" -> ${verdict === 'ok' ? 'OK' : 'refusé'}`);
     return res.json({ ok: verdict === 'ok' });
@@ -391,34 +534,39 @@ app.post('/verify-pin', async (req, res) => {
 // Saisie d'un match ADULTE : vérifie les 2 PINs, calcule les points, écrit le match.
 app.post('/submit-match', async (req, res) => {
   try {
-    const { teamA, pinA, teamB, pinB, scores } = req.body || {};
+    const { teamA, pinA, teamB, pinB, scores, submissionId } = req.body || {};
+    const sid = isSubmissionId(submissionId) ? 'm:' + submissionId : null;
+
     if (teamA === teamB) return res.status(400).json({ ok: false, error: 'Une équipe ne peut pas jouer contre elle-même' });
     const sc = cleanScores(scores);
     if (!sc) return res.status(400).json({ ok: false, error: 'Scores invalides' });
     const winner = deriveWinner(sc);
-    if (!winner) return res.status(400).json({ ok: false, error: 'Scores incohérents : vainqueur indéterminable' });
+    if (!winner) return res.status(400).json({ ok: false, error: SCORE_ERROR });
 
     const tA = await findByName('teams', teamA);
     const tB = await findByName('teams', teamB);
     if (!tA || !tB) return res.status(400).json({ ok: false, error: 'Équipe introuvable' });
 
-    const [vA, vB] = await Promise.all([checkPin(tA.id, pinA), checkPin(tB.id, pinB)]);
-    if (vA === 'locked' || vB === 'locked') {
-      return res.status(429).json({ ok: false, locked: true, error: 'Trop de PINs faux pour cette équipe. Réessaie dans 15 minutes.' });
-    }
+    const ip = clientIp(req);
+    const [vA, vB] = await Promise.all([checkPin(tA.id, pinA, ip), checkPin(tB.id, pinB, ip)]);
+    const lock = pinLockError(vA, tA.id, ip, `« ${tA.name} »`) || pinLockError(vB, tB.id, ip, `« ${tB.name} »`);
+    if (lock) return res.status(429).json(lock);
     if (vA !== 'ok' || vB !== 'ok') return res.status(403).json({ ok: false, error: 'PIN incorrect' });
 
-    const threeSet = !!sc.set3;
-    const { deltaA, deltaB } = computePoints(Number(tA.cote), Number(tB.cote), winner, threeSet);
-
-    await db.collection('matches').add({
-      equipeA: tA.name, equipeB: tB.name,
-      vainqueur: winner, scores: sc,
-      pointsA: deltaA, pointsB: deltaB,
-      date: FieldValue.serverTimestamp(),
-    });
-    console.log(`[submit-match] ${tA.name} vs ${tB.name} | vainqueur ${winner} | +${deltaA}/+${deltaB}`);
-    return res.json({ ok: true, pointsA: deltaA, pointsB: deltaB });
+    return await writeOnce(res,
+      { kind: 'submit-match', collection: 'matches', fieldA: 'equipeA', fieldB: 'equipeB', nameA: tA.name, nameB: tB.name, scores: sc, sid },
+      async () => {
+        const threeSet = !!sc.set3;
+        const { deltaA, deltaB } = computePoints(Number(tA.cote), Number(tB.cote), winner, threeSet);
+        await db.collection('matches').add({
+          equipeA: tA.name, equipeB: tB.name,
+          vainqueur: winner, scores: sc,
+          pointsA: deltaA, pointsB: deltaB,
+          date: FieldValue.serverTimestamp(),
+        });
+        console.log(`[submit-match] ${tA.name} vs ${tB.name} | vainqueur ${winner} | +${deltaA}/+${deltaB}`);
+        return { ok: true, pointsA: deltaA, pointsB: deltaB };
+      });
   } catch (e) {
     console.error('submit-match:', e);
     return res.status(500).json({ ok: false, error: 'Erreur serveur' });
@@ -428,35 +576,40 @@ app.post('/submit-match', async (req, res) => {
 // Saisie d'un match JUNIOR : vérifie les 2 PINs, calcule les étoiles, écrit le match.
 app.post('/submit-jmatch', async (req, res) => {
   try {
-    const { joueurA, pinA, joueurB, pinB, scores } = req.body || {};
+    const { joueurA, pinA, joueurB, pinB, scores, submissionId } = req.body || {};
+    const sid = isSubmissionId(submissionId) ? 'j:' + submissionId : null;
+
     if (joueurA === joueurB) return res.status(400).json({ ok: false, error: 'Un joueur ne peut pas jouer contre lui-même' });
     const sc = cleanScores(scores);
     if (!sc) return res.status(400).json({ ok: false, error: 'Scores invalides' });
     const winner = deriveWinner(sc);
-    if (!winner) return res.status(400).json({ ok: false, error: 'Scores incohérents : vainqueur indéterminable' });
+    if (!winner) return res.status(400).json({ ok: false, error: SCORE_ERROR });
 
     const jA = await findByName('juniors', joueurA);
     const jB = await findByName('juniors', joueurB);
     if (!jA || !jB) return res.status(400).json({ ok: false, error: 'Joueur introuvable' });
 
-    const [vA, vB] = await Promise.all([checkPin(jA.id, pinA), checkPin(jB.id, pinB)]);
-    if (vA === 'locked' || vB === 'locked') {
-      return res.status(429).json({ ok: false, locked: true, error: 'Trop de PINs faux pour ce joueur. Réessaie dans 15 minutes.' });
-    }
+    const ip = clientIp(req);
+    const [vA, vB] = await Promise.all([checkPin(jA.id, pinA, ip), checkPin(jB.id, pinB, ip)]);
+    const lock = pinLockError(vA, jA.id, ip, `« ${jA.name} »`) || pinLockError(vB, jB.id, ip, `« ${jB.name} »`);
+    if (lock) return res.status(429).json(lock);
     if (vA !== 'ok' || vB !== 'ok') return res.status(403).json({ ok: false, error: 'PIN incorrect' });
 
-    const starsA = winner === 'A' ? 2 : 1;
-    const starsB = winner === 'B' ? 2 : 1;
-    const greenBalls = !!(jA.green || jB.green);
-
-    await db.collection('juniors_matches').add({
-      joueurA: jA.name, joueurB: jB.name,
-      vainqueur: winner, scores: sc,
-      starsA, starsB, greenBalls,
-      date: FieldValue.serverTimestamp(),
-    });
-    console.log(`[submit-jmatch] ${jA.name} vs ${jB.name} | vainqueur ${winner} | +${starsA}⭐/+${starsB}⭐`);
-    return res.json({ ok: true, starsA, starsB, greenBalls });
+    return await writeOnce(res,
+      { kind: 'submit-jmatch', collection: 'juniors_matches', fieldA: 'joueurA', fieldB: 'joueurB', nameA: jA.name, nameB: jB.name, scores: sc, sid },
+      async () => {
+        const starsA = winner === 'A' ? 2 : 1;
+        const starsB = winner === 'B' ? 2 : 1;
+        const greenBalls = !!(jA.green || jB.green);
+        await db.collection('juniors_matches').add({
+          joueurA: jA.name, joueurB: jB.name,
+          vainqueur: winner, scores: sc,
+          starsA, starsB, greenBalls,
+          date: FieldValue.serverTimestamp(),
+        });
+        console.log(`[submit-jmatch] ${jA.name} vs ${jB.name} | vainqueur ${winner} | +${starsA}⭐/+${starsB}⭐`);
+        return { ok: true, starsA, starsB, greenBalls };
+      });
   } catch (e) {
     console.error('submit-jmatch:', e);
     return res.status(500).json({ ok: false, error: 'Erreur serveur' });
@@ -478,9 +631,15 @@ app.get('/admin/status', async (req, res) => {
 });
 
 // Première utilisation : définit le code admin. Impossible s'il en existe déjà
-// un. Si SETUP_TOKEN est défini côté serveur, il est exigé ici.
+// un, et seulement depuis le Pi lui-même (voir README, « code admin perdu ») :
+// sinon, pendant la procédure, n'importe qui pourrait créer le code avant toi.
+// Si SETUP_TOKEN est défini côté serveur, il est exigé en plus.
 app.post('/admin/setup', async (req, res) => {
   try {
+    if (!fromPiItself(req)) {
+      console.log(`[admin] création du code admin refusée : demande venue d'Internet (${clientIp(req)})`);
+      return res.status(403).json({ ok: false, error: 'Par sécurité, le code admin se crée depuis le Raspberry Pi lui-même (voir server/README.md).' });
+    }
     const { code, setupToken } = req.body || {};
     if (await adminExists()) return res.status(409).json({ ok: false, error: 'Un code admin est déjà défini.' });
     if (SETUP_TOKEN && !safeEqual(String(setupToken || ''), SETUP_TOKEN)) {
@@ -489,10 +648,16 @@ app.post('/admin/setup', async (req, res) => {
     if (typeof code !== 'string' || code.length < 8 || code.length > 200) {
       return res.status(400).json({ ok: false, error: 'Le code doit faire au moins 8 caractères.' });
     }
-    await db.collection('secrets').doc('admin').set({
-      ...(await buildAdminRecord(code)),
-      updatedAt: FieldValue.serverTimestamp(),
-    });
+    try {
+      // create() échoue si le document existe déjà : deux créations simultanées ne peuvent pas réussir toutes les deux.
+      await db.collection('secrets').doc('admin').create({
+        ...(await buildAdminRecord(code)),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      if (e && e.code === 6) return res.status(409).json({ ok: false, error: 'Un code admin est déjà défini.' });
+      throw e;
+    }
     console.log('[admin] code admin initialisé');
     return res.json({ ok: true, token: issueAdminToken() });
   } catch (e) {
@@ -585,10 +750,48 @@ app.post('/admin/set-pin', async (req, res) => {
     const payload = { hash: sha256(pin) };
     if (isPinEnc(pinEnc)) payload.pinEnc = pinEnc;
     await db.collection('secrets').doc(doc.id).set(payload, { merge: true });
-    pinTargetReset(doc.id);
+    pinLocksReset(doc.id);
     return res.json({ ok: true });
   } catch (e) {
     console.error('set-pin:', e);
+    return res.status(500).json({ ok: false, error: 'Erreur serveur' });
+  }
+});
+
+// Équipes et joueurs dont la saisie de PIN est bloquée (écran admin).
+app.post('/admin/locks', async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const ids = new Set([...targetFails.keys(), ...[...deviceFails.keys()].map((k) => k.split('|')[0])]);
+    const locks = [];
+    for (const id of ids) {
+      const info = lockInfo(id);
+      if (!info.frozen && info.devicesLocked === 0) continue;
+      let scope = 'team';
+      let doc = await db.collection('teams').doc(id).get();
+      if (!doc.exists) { scope = 'junior'; doc = await db.collection('juniors').doc(id).get(); }
+      if (!doc.exists) continue;
+      locks.push({ id, scope, name: doc.data().name, ...info });
+    }
+    locks.sort((a, b) => Number(b.frozen) - Number(a.frozen) || a.name.localeCompare(b.name, 'fr'));
+    return res.json({ ok: true, locks });
+  } catch (e) {
+    console.error('admin/locks:', e);
+    return res.status(500).json({ ok: false, error: 'Erreur serveur' });
+  }
+});
+
+// Débloque la saisie de PIN d'une équipe ou d'un joueur (tous appareils).
+app.post('/admin/unlock-pin', async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const { id } = req.body || {};
+    if (typeof id !== 'string' || !id) return res.status(400).json({ ok: false, error: 'Identifiant manquant' });
+    pinLocksReset(id);
+    console.log(`[admin] saisie de PIN débloquée pour ${id}`);
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('admin/unlock-pin:', e);
     return res.status(500).json({ ok: false, error: 'Erreur serveur' });
   }
 });
@@ -603,8 +806,7 @@ app.post('/admin/pins', async (req, res) => {
       const snap = await db.collection(coll).get();
       for (const doc of snap.docs) {
         const secret = await db.collection('secrets').doc(doc.id).get();
-        // Repli sur l'ancien emplacement tant que le nettoyage n'a pas tourné.
-        const pinEnc = (secret.exists && secret.data().pinEnc) || doc.data().pinEnc || null;
+        const pinEnc = (secret.exists && secret.data().pinEnc) || null;
         out[coll].push({ id: doc.id, name: doc.data().name, pinEnc });
       }
     }
@@ -802,7 +1004,7 @@ app.post('/admin/edit-match', async (req, res) => {
     const sc = cleanScores(scores);
     if (!sc) return res.status(400).json({ ok: false, error: 'Scores invalides' });
     const winner = deriveWinner(sc);
-    if (!winner) return res.status(400).json({ ok: false, error: 'Scores incohérents : vainqueur indéterminable' });
+    if (!winner) return res.status(400).json({ ok: false, error: SCORE_ERROR });
     const ref = db.collection('matches').doc(String(matchId));
     const snap = await ref.get();
     if (!snap.exists) return res.status(400).json({ ok: false, error: 'Match introuvable' });
@@ -827,7 +1029,7 @@ app.post('/admin/edit-jmatch', async (req, res) => {
     const sc = cleanScores(scores);
     if (!sc) return res.status(400).json({ ok: false, error: 'Scores invalides' });
     const winner = deriveWinner(sc);
-    if (!winner) return res.status(400).json({ ok: false, error: 'Scores incohérents : vainqueur indéterminable' });
+    if (!winner) return res.status(400).json({ ok: false, error: SCORE_ERROR });
     const ref = db.collection('juniors_matches').doc(String(matchId));
     const snap = await ref.get();
     if (!snap.exists) return res.status(400).json({ ok: false, error: 'Match introuvable' });
@@ -913,14 +1115,44 @@ async function publishTunnelUrl() {
 setTimeout(publishTunnelUrl, 4000).unref();
 setInterval(publishTunnelUrl, 60_000).unref();
 
+// Le serveur n'écoute que le Pi lui-même : le tunnel Cloudflare tourne sur le Pi
+// et s'y connecte par localhost, en IPv4 (127.0.0.1) ou en IPv6 (::1) selon le
+// système — on écoute donc les deux. Les autres appareils du réseau local ne
+// peuvent plus lui parler directement : sinon ils pourraient se faire passer
+// pour plusieurs appareils avec un faux en-tête CF-Connecting-IP.
+// LISTEN_HOST=0.0.0.0 rétablit l'écoute sur tout le réseau si besoin.
+const LISTEN_HOSTS = process.env.LISTEN_HOST ? [process.env.LISTEN_HOST] : ['127.0.0.1', '::1'];
+
+// Erreurs d'écoute acceptables : l'adresse n'existe pas sur cette machine (pas
+// d'IPv6). Toute autre erreur (port déjà pris…) arrête le démarrage, plutôt
+// que de laisser un serveur joignable seulement à moitié.
+const LISTEN_SKIPPABLE = new Set(['EADDRNOTAVAIL', 'EAFNOSUPPORT']);
+
+async function startServer(port = PORT, hosts = LISTEN_HOSTS) {
+  const results = await Promise.all(hosts.map((host) => new Promise((resolve) => {
+    const srv = http.createServer(app);
+    srv.once('error', (error) => resolve({ host, error }));
+    srv.listen(port, host, () => resolve({ host, srv }));
+  })));
+  const servers = results.filter((r) => r.srv).map((r) => r.srv);
+  const fatal = results.find((r) => r.error && !LISTEN_SKIPPABLE.has(r.error.code));
+  for (const r of results) if (r.error && !fatal) console.error(`Écoute ignorée sur ${r.host}:${port} (${r.error.code})`);
+  if (fatal || servers.length === 0) {
+    await Promise.all(servers.map((srv) => new Promise((r) => srv.close(r))));
+    const why = fatal ? `${fatal.host}:${port} (${fatal.error.code})` : `port ${port}`;
+    throw new Error(`Impossible d'écouter sur ${why}`);
+  }
+  return servers;
+}
+
 // Démarrage seulement si le fichier est lancé directement (`npm start`), pour
 // qu'il puisse aussi être chargé par les tests sans ouvrir de port.
 if (require.main === module) {
-  app.listen(PORT, () => {
-    console.log(`Serveur Défi Double démarré sur le port ${PORT}`);
+  startServer().then((servers) => {
+    console.log(`Serveur Défi Double démarré sur le port ${PORT} (écoute : ${servers.map((s) => s.address().address).join(', ')})`);
     console.log(`Origine autorisée : ${ALLOWED_ORIGIN}`);
     console.log(`IP client lue depuis : ${TRUST_CF_HEADER ? 'CF-Connecting-IP (tunnel Cloudflare)' : 'la connexion directe'}`);
-  });
+  }).catch((e) => { console.error(e.message); process.exit(1); });
 }
 
-module.exports = { app, computePoints, deriveWinner, cleanScores, cleanDrawScores, cleanName, isPinEnc };
+module.exports = { app, startServer, computePoints, deriveWinner, cleanScores, cleanDrawScores, cleanName, isPinEnc };

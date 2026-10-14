@@ -75,6 +75,11 @@ cours de route.
 > Firestore > Importer/Exporter). Rien dans cette procédure n'efface de
 > données, mais une sauvegarde ne coûte rien.
 
+> ✅ Les étapes 1 à 4 ont été faites (juillet et octobre 2026). Elles restent ici pour l'historique.
+
+> ✅ Les étapes 1 à 4 ont été faites (juillet et octobre 2026) : elles restent ici pour l'historique.
+> Pour mettre le Pi à jour aujourd'hui : `cd ~/defi-double-Morgins && git pull && cd server && npm install && pm2 restart defi-double`.
+
 **Étape 1 — mettre à jour le Pi (aucune coupure)**
 
 ```bash
@@ -96,6 +101,10 @@ est reconnu, puis converti automatiquement au nouveau format (PBKDF2 salé,
 rangé dans la zone privée). Aucun risque de te retrouver bloqué dehors.
 
 **Étape 3 — déplacer les PINs chiffrés hors des documents publics**
+
+> ✅ Faite en octobre 2026. Depuis, les actions admin exigent le jeton de connexion
+> (`adminToken` obtenu via `/admin/login`) : les commandes ci-dessous avec `adminCode`
+> ne fonctionnent plus et ne sont gardées que pour l'historique.
 
 ```bash
 curl -X POST https://TON-URL/admin/migrate-pinenc -H "Content-Type: application/json" \
@@ -140,8 +149,8 @@ rechiffrés automatiquement au passage.
 
 ## Endpoints (pour info)
 
-Les endpoints `/admin/*` acceptent soit `adminToken` (jeton de session obtenu
-via `/admin/login`), soit `adminCode` (compatibilité).
+Les endpoints `/admin/*` exigent `adminToken`, le jeton de session obtenu via
+`/admin/login` (valable 8 h, perdu au redémarrage du serveur).
 
 | Méthode | Chemin | Rôle |
 |--------|--------|------|
@@ -151,7 +160,7 @@ via `/admin/login`), soit `adminCode` (compatibilité).
 | POST | `/submit-match` | Enregistrer un match adulte (vérifie 2 PINs, calcule les points) |
 | POST | `/submit-jmatch` | Enregistrer un match junior |
 | POST | `/admin/login` | Se connecter et obtenir un jeton de session |
-| POST | `/admin/setup` | Définir le tout premier code admin |
+| POST | `/admin/setup` | Définir le tout premier code admin (depuis le Pi uniquement) |
 | POST | `/admin/change-code` | Changer le code admin (rechiffre les PINs) |
 | POST | `/admin/pins` | Lire les PINs chiffrés (affichage admin) |
 | POST | `/admin/set-pin` | Définir/changer le PIN d'une équipe/joueur |
@@ -159,6 +168,8 @@ via `/admin/login`), soit `adminCode` (compatibilité).
 | POST | `/admin/delete-team` · `/admin/delete-junior` | Supprimer une équipe / un joueur |
 | POST | `/admin/delete-match` · `/admin/delete-jmatch` | Supprimer un match |
 | POST | `/admin/set-green` | Basculer la catégorie verte d'un junior |
+| POST | `/admin/locks` | Lister les saisies bloquées (trop de PIN faux) |
+| POST | `/admin/unlock-pin` | Débloquer la saisie de PIN d'une équipe / d'un joueur |
 | POST | `/admin/edit-match` · `/admin/edit-jmatch` | Corriger un score (points recalculés) |
 | POST | `/admin/migrate` · `/admin/migrate-pinenc` | Migrations (rejouables) |
 | POST | `/admin/cleanup-hashes` | Retirer les champs sensibles des documents publics |
@@ -167,8 +178,35 @@ Variables d'environnement optionnelles : `PORT` (défaut 8080),
 `ALLOWED_ORIGIN` (défaut `https://wirfox.github.io`),
 `TRUST_CF_HEADER` (défaut activé — mettre `0` si le serveur est exposé
 directement, sans tunnel Cloudflare),
-`SETUP_TOKEN` (si défini, exigé pour créer le tout premier code admin).
+`SETUP_TOKEN` (si défini, exigé pour créer le tout premier code admin),
+`LISTEN_HOST` (par défaut, le serveur n'écoute que le Pi lui-même, `127.0.0.1` et `::1`,
+pour que le tunnel soit la seule porte d'entrée ; `LISTEN_HOST=0.0.0.0` rétablit l'écoute
+sur tout le réseau local).
 
 > ⚠️ **Si tu perds le code admin** : supprime le document `secrets/admin` dans
-> la console Firebase, puis rouvre l'admin sur le site — il te proposera d'en
-> définir un nouveau.
+> la console Firebase, puis, **sur le Raspberry Pi**, crée le nouveau code
+> (8 à 64 caractères, demandé deux fois sans s'afficher) :
+>
+> ```bash
+> cd ~/defi-double-Morgins/server && npm run admin-setup
+> ```
+>
+> Les PINs chiffrés avec l'ancien code ne sont plus lisibles dans l'admin :
+> retape-les avec « Modifier » (les mêmes si tu les as encore, sinon de
+> nouveaux à redonner aux équipes). La vérification des PINs, elle, continue
+> de marcher.
+>
+> Par sécurité, le serveur refuse de créer le code admin depuis le site ou
+> depuis un autre appareil : personne ne peut donc prendre ta place pendant
+> la procédure. Recharge ensuite l'admin sur le site et connecte-toi.
+
+## Tests
+
+Les tests du serveur tournent sans Firebase (une fausse base en mémoire remplace
+Firestore) :
+
+```bash
+cd server
+npm install
+npm test
+```
