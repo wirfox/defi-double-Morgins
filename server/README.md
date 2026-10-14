@@ -200,6 +200,33 @@ sur tout le réseau local).
 > depuis un autre appareil : personne ne peut donc prendre ta place pendant
 > la procédure. Recharge ensuite l'admin sur le site et connecte-toi.
 
+## Sauvegarde et restauration de la base
+
+Deux scripts, à lancer **sur le Pi** depuis le dossier `server` (ils utilisent la
+même clé `serviceAccountKey.json` que le serveur) :
+
+```bash
+# Sauvegarde complète (toutes les collections, PIN compris) : ne fait que LIRE la base
+node scripts/backup-export.js                 # -> ~/backups/defi-double/defi-double-AAAA-MM-JJ.json.gz
+node scripts/backup-export.js /autre/dossier  # dossier au choix
+
+# Restauration : montre d'abord ce qui changerait, sans rien écrire
+node scripts/backup-restore.js ~/backups/defi-double/defi-double-2026-10-14.json.gz
+node scripts/backup-restore.js <fichier> --details           # + la liste des documents
+node scripts/backup-restore.js <fichier> --apply             # recrée les documents disparus
+node scripts/backup-restore.js <fichier> --apply --only matches
+node scripts/backup-restore.js <fichier> --apply --mode overwrite   # remet aussi les modifiés
+```
+
+- Le fichier est compressé et lisible seulement par ton utilisateur (`600`, dossier `700`).
+  Code de sortie `0` = réussi, `1` = échec : utilisable tel quel dans un script bash et cron.
+- La restauration **ne supprime jamais rien**. Avant d'écrire (`--apply`), elle sauvegarde
+  l'état actuel à côté (`…-avant-restauration-HHMMSS.json.gz`).
+- En mode `overwrite`, `config/server` (l'adresse actuelle du tunnel) n'est jamais remis, ni
+  le code admin (`secrets/admin`) sauf avec `--include-admin`.
+- Une sauvegarde d'un autre projet Firebase est refusée.
+- Dans cron, mets le chemin complet de node (`which node`) : cron ne connaît pas le même PATH que toi.
+
 ## Tests
 
 Les tests du serveur tournent sans Firebase (une fausse base en mémoire remplace

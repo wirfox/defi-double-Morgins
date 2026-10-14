@@ -6,8 +6,10 @@
   "type": "commonjs",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test test/server.test.js",
-    "admin-setup": "node scripts/admin-setup.js"
+    "test": "node --test test/server.test.js test/backup.test.js",
+    "admin-setup": "node scripts/admin-setup.js",
+    "backup": "node scripts/backup-export.js",
+    "restore": "node scripts/backup-restore.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

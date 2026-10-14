@@ -3,3 +3,6 @@ node_modules/
 serviceAccountKey.json
 .env
 *.log
+
+# Sauvegardes de la base (contiennent les PIN)
+*.json.gz
