@@ -137,7 +137,7 @@ function cleanScores(scores) {
   if (!scores || typeof scores !== 'object') return null;
   const { set1, set2, set3 } = scores;
   if (!isValidScore(set1) || !isValidScore(set2)) return null;
-  if (set3 !== undefined && set3 !== '' && !isValidScore(set3)) return null;
+  if (set3 !== undefined && set3 !== null && set3 !== '' && !isValidScore(set3)) return null;
   const out = { set1: normalizeScore(set1), set2: normalizeScore(set2) };
   if (set3) out.set3 = normalizeScore(set3);
   return out;
@@ -150,10 +150,11 @@ function cleanScores(scores) {
 function cleanDrawScores(scores) {
   if (!scores || typeof scores !== 'object') return null;
   const out = {};
-  let setsA = 0, setsB = 0, entered = 0;
+  let setsA = 0, setsB = 0, entered = 0, gap = false;
   for (const k of ['set1', 'set2', 'set3']) {
     const v = scores[k];
-    if (v === undefined || v === '') continue;
+    if (v === undefined || v === '' || v === null) { gap = true; continue; }
+    if (gap) return null;                // sets dans l'ordre : pas de set 3 sans set 2
     if (!isValidScore(v)) return null;
     const parts = String(v).split('-');
     if (parts.length !== 2) return null;
@@ -171,9 +172,13 @@ function cleanDrawScores(scores) {
 // Nom d'équipe / de joueur : les créations passent désormais par ici, donc
 // c'est le bon endroit pour refuser les caractères de contrôle et les balises
 // (défense en profondeur contre une injection via un nom).
+// Les caractères invisibles (espaces de largeur nulle, marques de direction)
+// sont retirés aussi : sinon un nom pourrait s'afficher vide, ou ressembler à
+// s'y méprendre à un autre.
+const INVISIBLE_CHARS = /[\x00-\x1f\x7f\u00ad\u200b-\u200f\u202a-\u202e\u2060-\u2064\ufeff]/g;
 function cleanName(name) {
   if (typeof name !== 'string') return null;
-  const n = name.trim().replace(/[\x00-\x1f\x7f]/g, '');
+  const n = name.normalize('NFC').replace(INVISIBLE_CHARS, '').trim();
   if (n.length < 1 || n.length > 80) return null;
   if (/[<>]/.test(n)) return null;
   return n;
@@ -194,6 +199,18 @@ async function findByName(collection, name) {
   return { id: doc.id, ...doc.data() };
 }
 
+// Même recherche, sans tenir compte des majuscules : « alpha » et « Alpha »
+// seraient deux équipes impossibles à distinguer pour les joueurs.
+async function findByNameInsensitive(collection, name) {
+  const wanted = String(name).toLocaleLowerCase('fr');
+  const snap = await db.collection(collection).get();
+  const doc = snap.docs.find((d) => String(d.data().name || '').normalize('NFC').toLocaleLowerCase('fr') === wanted);
+  return doc ? { id: doc.id, ...doc.data() } : null;
+}
+
+// Une cote est un nombre entier de 1 à 30 (une cote à virgule donnerait des points à virgule).
+const isCote = (c) => typeof c === 'number' && Number.isInteger(c) && c >= 1 && c <= 30;
+
 // Lit le hash du PIN depuis la collection privée `secrets` (jamais exposée aux clients).
 async function getPinHash(docId) {
   const s = await db.collection('secrets').doc(docId).get();
@@ -210,7 +227,10 @@ async function pinIsValid(docId, pin) {
 // Limiteur générique à fenêtre glissante. La Map est purgée périodiquement et
 // bornée : sans ça, un attaquant qui varie sa clé la ferait grossir sans fin
 // (fuite mémoire sur le Raspberry).
-function createLimiter({ max, windowMs, maxKeys = 10_000 }) {
+// failClosed : une fois plein, refuser les NOUVELLES clés au lieu de tout oublier.
+// Indispensable pour le code admin : sinon un attaquant qui dispose de beaucoup
+// d'adresses (un bloc IPv6 s'obtient gratuitement) viderait le limiteur à volonté.
+function createLimiter({ max, windowMs, maxKeys = 10_000, failClosed = false }) {
   const hits = new Map();
   function purge() {
     const now = Date.now();
@@ -220,10 +240,13 @@ function createLimiter({ max, windowMs, maxKeys = 10_000 }) {
     const now = Date.now();
     if (hits.size > maxKeys) {
       purge();
-      // Toujours saturée : on repart à zéro plutôt que de gonfler indéfiniment.
-      // La vraie protection des PINs est le verrou par cible ci-dessous, dont
-      // le nombre de clés est borné par le nombre d'équipes/joueurs.
-      if (hits.size > maxKeys) hits.clear();
+      if (hits.size > maxKeys) {
+        if (failClosed) { if (!hits.has(key)) return false; }
+        // Toujours saturée : on repart à zéro plutôt que de gonfler indéfiniment.
+        // La vraie protection des PINs est le verrou par cible ci-dessous, dont
+        // le nombre de clés est borné par le nombre d'équipes/joueurs.
+        else hits.clear();
+      }
     }
     const rec = hits.get(key);
     if (!rec || now - rec.ts > windowMs) { hits.set(key, { count: 1, ts: now }); return true; }
@@ -238,7 +261,34 @@ function createLimiter({ max, windowMs, maxKeys = 10_000 }) {
 // club connecté au même wifi (une seule adresse publique pour tous).
 const ipLimiter = createLimiter({ max: 120, windowMs: 60_000 });
 // Tentatives de connexion admin : beaucoup plus strict.
-const adminLoginLimiter = createLimiter({ max: 5, windowMs: 15 * 60_000 });
+const adminLoginLimiter = createLimiter({ max: 5, windowMs: 15 * 60_000, failClosed: true });
+
+// Plafond GLOBAL des codes admin faux, toutes adresses confondues : le limiteur
+// par adresse ne suffit pas contre quelqu'un qui en change à chaque essai.
+// Au-delà de ADMIN_GLOBAL_MAX_FAILS échecs en une heure, la connexion admin est
+// suspendue pour tout le monde… sauf pour les adresses d'où l'admin s'est déjà
+// connecté avec succès (mémorisées tant que le serveur tourne).
+const ADMIN_GLOBAL_MAX_FAILS = 50;
+const ADMIN_GLOBAL_WINDOW_MS = 3600_000;
+let adminGlobalFails = [];               // horodatages des échecs récents
+const adminTrustedIps = new Map();       // adresse -> dernière connexion réussie
+const ADMIN_TRUST_MS = 30 * 24 * 3600_000;
+
+function adminGloballyBlocked(ip) {
+  const now = Date.now();
+  adminGlobalFails = adminGlobalFails.filter((t) => now - t < ADMIN_GLOBAL_WINDOW_MS);
+  if (adminGlobalFails.length < ADMIN_GLOBAL_MAX_FAILS) return false;
+  const trusted = adminTrustedIps.get(ip);
+  return !(trusted && now - trusted < ADMIN_TRUST_MS);
+}
+function noteAdminFailure() {
+  adminGlobalFails.push(Date.now());
+  if (adminGlobalFails.length === ADMIN_GLOBAL_MAX_FAILS) {
+    console.log(`[admin] ⚠ ${ADMIN_GLOBAL_MAX_FAILS} codes admin faux en moins d'une heure : connexion suspendue (sauf adresses connues)`);
+  }
+}
+function noteAdminSuccess(ip) { adminTrustedIps.set(ip, Date.now()); }
+const ADMIN_BLOCKED_ERROR = "Trop de codes admin faux ces dernières minutes : la connexion admin est suspendue pendant une heure. Réessaie depuis l'appareil d'où tu te connectes d'habitude.";
 
 // Verrous des PINs, à deux niveaux :
 //  - par appareil : PIN_DEVICE_MAX_FAILS PINs faux depuis une même adresse pour
@@ -249,7 +299,10 @@ const adminLoginLimiter = createLimiter({ max: 5, windowMs: 15 * 60_000 });
 //    faux d'affilée (un bon PIN remet ce compteur à zéro), ou PIN_TARGET_MAX_TOTAL
 //    PINs faux en tout sur PIN_TOTAL_WINDOW_MS, bloquent la cible jusqu'au
 //    déblocage par l'admin (ou au redémarrage du serveur).
-// Un attaquant a donc au plus 100 essais par mois sur les 10 000 PINs possibles.
+// Un attaquant a donc au plus 100 essais par mois sur les 10 000 PINs possibles,
+// tant que l'admin ne débloque pas la cible et que le serveur ne redémarre pas
+// (ces compteurs sont en mémoire : un déblocage ou un redémarrage les remet à
+// zéro). Compromis choisi entre sécurité et simplicité d'usage pour le club.
 const PIN_DEVICE_MAX_FAILS = 10;
 const PIN_LOCK_MS = 15 * 60_000;
 const PIN_TARGET_MAX_FAILS = 30;
@@ -362,6 +415,7 @@ setInterval(() => {
   for (const [k, rec] of deviceFails) if (now - rec.ts > PIN_LOCK_MS) deviceFails.delete(k);
   for (const [k, rec] of targetFails) if (!isFrozen(rec) && now - rec.ts > PIN_TOTAL_WINDOW_MS) targetFails.delete(k);
   for (const [t, exp] of adminTokens) if (now > exp) adminTokens.delete(t);
+  for (const [k, ts] of adminTrustedIps) if (now - ts > ADMIN_TRUST_MS) adminTrustedIps.delete(k);
   for (const [k, v] of submissions) if (now - v.at > DUP_WINDOW_MS) submissions.delete(k);
 }, 60_000).unref();
 
@@ -426,11 +480,13 @@ async function requireAdmin(req, res) {
 
 // --- App -------------------------------------------------------------------
 const app = express();
-app.use(express.json({ limit: '64kb' }));
 // Rappel : le CORS ne protège que les navigateurs — il n'empêche pas un script
 // d'appeler le serveur. La vraie protection, ce sont les PINs et le verrou
-// anti-brute-force ci-dessus.
+// anti-brute-force ci-dessus. Déclaré AVANT la lecture du JSON : sinon une
+// erreur de lecture partirait sans en-tête CORS, et le site n'afficherait qu'une
+// « erreur réseau » au lieu du message.
 app.use(cors({ origin: ALLOWED_ORIGIN }));
+app.use(express.json({ limit: '64kb' }));
 
 app.use((req, res, next) => {
   if (!ipLimiter.allow(clientIp(req))) {
@@ -557,11 +613,15 @@ app.post('/submit-match', async (req, res) => {
       { kind: 'submit-match', collection: 'matches', fieldA: 'equipeA', fieldB: 'equipeB', nameA: tA.name, nameB: tB.name, scores: sc, sid },
       async () => {
         const threeSet = !!sc.set3;
-        const { deltaA, deltaB } = computePoints(Number(tA.cote), Number(tB.cote), winner, threeSet);
+        const coteA = Number(tA.cote), coteB = Number(tB.cote);
+        const { deltaA, deltaB } = computePoints(coteA, coteB, winner, threeSet);
         await db.collection('matches').add({
           equipeA: tA.name, equipeB: tB.name,
           vainqueur: winner, scores: sc,
           pointsA: deltaA, pointsB: deltaB,
+          // Cotes du jour du match : une correction de score ultérieure doit
+          // recalculer les points avec elles, pas avec la cote actuelle.
+          coteA, coteB,
           date: FieldValue.serverTimestamp(),
         });
         console.log(`[submit-match] ${tA.name} vs ${tB.name} | vainqueur ${winner} | +${deltaA}/+${deltaB}`);
@@ -670,21 +730,32 @@ app.post('/admin/setup', async (req, res) => {
 app.post('/admin/login', async (req, res) => {
   try {
     const ip = clientIp(req);
+    if (adminGloballyBlocked(ip)) return res.status(429).json({ ok: false, error: ADMIN_BLOCKED_ERROR });
     if (!adminLoginLimiter.allow(ip)) {
       return res.status(429).json({ ok: false, error: 'Trop de tentatives. Réessaie dans 15 minutes.' });
     }
     const { code } = req.body || {};
     if (!(await adminCodeIsValid(code))) {
+      noteAdminFailure();
       console.log(`[admin] connexion refusée (${ip})`);
       return res.status(403).json({ ok: false, error: 'Code admin invalide' });
     }
     adminLoginLimiter.reset(ip);
+    noteAdminSuccess(ip);
     console.log('[admin] connexion réussie');
     return res.json({ ok: true, token: issueAdminToken() });
   } catch (e) {
     console.error('admin/login:', e);
     return res.status(500).json({ ok: false, error: 'Erreur serveur' });
   }
+});
+
+// Déconnexion : le jeton est oublié tout de suite côté serveur, au lieu de
+// rester valable jusqu'à son expiration.
+app.post('/admin/logout', (req, res) => {
+  const { adminToken } = req.body || {};
+  if (typeof adminToken === 'string') adminTokens.delete(adminToken);
+  return res.json({ ok: true });
 });
 
 // Changement du code admin — impossible auparavant (les règles interdisaient
@@ -694,21 +765,32 @@ app.post('/admin/change-code', async (req, res) => {
   try {
     const { currentCode, newCode, pins } = req.body || {};
     const ip = clientIp(req);
+    if (adminGloballyBlocked(ip)) return res.status(429).json({ ok: false, error: ADMIN_BLOCKED_ERROR });
     if (!adminLoginLimiter.allow(ip)) {
       return res.status(429).json({ ok: false, error: 'Trop de tentatives. Réessaie dans 15 minutes.' });
     }
     if (!(await adminCodeIsValid(currentCode))) {
+      noteAdminFailure();
       return res.status(403).json({ ok: false, error: 'Code admin actuel invalide' });
     }
+    adminLoginLimiter.reset(ip);
+    noteAdminSuccess(ip);
     if (typeof newCode !== 'string' || newCode.length < 8 || newCode.length > 200) {
       return res.status(400).json({ ok: false, error: 'Le nouveau code doit faire au moins 8 caractères.' });
     }
 
+    // Seuls les PINs de vraies équipes / vrais joueurs sont acceptés : un
+    // identifiant inventé créerait un document parasite dans `secrets`.
+    const knownIds = new Set();
+    for (const coll of ['teams', 'juniors']) {
+      for (const d of (await db.collection(coll).get()).docs) knownIds.add(d.id);
+    }
     const batch = db.batch();
     let reencrypted = 0;
     if (Array.isArray(pins)) {
-      for (const p of pins.slice(0, 500)) {
-        if (!p || typeof p.id !== 'string' || !isPinEnc(p.pinEnc)) continue;
+      // 450 au plus : une écriture groupée Firestore est limitée à 500 opérations.
+      for (const p of pins.slice(0, 450)) {
+        if (!p || typeof p.id !== 'string' || !knownIds.has(p.id) || !isPinEnc(p.pinEnc)) continue;
         batch.set(db.collection('secrets').doc(p.id), { pinEnc: p.pinEnc }, { merge: true });
         reencrypted++;
       }
@@ -825,10 +907,10 @@ app.post('/admin/add-team', async (req, res) => {
     const { name, cote, pin, pinEnc } = req.body || {};
     const n = cleanName(name);
     if (!n) return res.status(400).json({ ok: false, error: 'Nom invalide' });
-    const c = Number(cote);
-    if (!Number.isFinite(c) || c < 1 || c > 30) return res.status(400).json({ ok: false, error: 'Cote invalide (1 à 30)' });
+    if (!isCote(cote)) return res.status(400).json({ ok: false, error: 'Cote invalide (nombre entier de 1 à 30)' });
+    const c = cote;
     if (!isPin(pin)) return res.status(400).json({ ok: false, error: 'PIN = 4 chiffres' });
-    if (await findByName('teams', n)) return res.status(409).json({ ok: false, error: 'Cette équipe existe déjà' });
+    if (await findByNameInsensitive('teams', n)) return res.status(409).json({ ok: false, error: 'Cette équipe existe déjà' });
 
     const ref = await db.collection('teams').add({ name: n, cote: c, points: 0 });
     const payload = { hash: sha256(pin) };
@@ -850,7 +932,7 @@ app.post('/admin/add-junior', async (req, res) => {
     const n = cleanName(name);
     if (!n) return res.status(400).json({ ok: false, error: 'Nom invalide' });
     if (!isPin(pin)) return res.status(400).json({ ok: false, error: 'PIN = 4 chiffres' });
-    if (await findByName('juniors', n)) return res.status(409).json({ ok: false, error: 'Ce joueur existe déjà' });
+    if (await findByNameInsensitive('juniors', n)) return res.status(409).json({ ok: false, error: 'Ce joueur existe déjà' });
 
     const ref = await db.collection('juniors').add({ name: n, green: !!green, stars: 0 });
     const payload = { hash: sha256(pin) };
@@ -860,6 +942,47 @@ app.post('/admin/add-junior', async (req, res) => {
     return res.json({ ok: true, id: ref.id });
   } catch (e) {
     console.error('add-junior:', e);
+    return res.status(500).json({ ok: false, error: 'Erreur serveur' });
+  }
+});
+
+// Changement de la cote d'une équipe. Avant, il fallait supprimer puis recréer
+// l'équipe (avec un nouveau PIN). Les points déjà gagnés ne bougent pas : ils
+// sont enregistrés dans chaque match. Les matchs anciens, qui ne gardaient pas
+// la cote du jour, la reçoivent ici (l'ancienne cote) : ainsi une correction de
+// score ultérieure les recalcule avec la bonne cote. Rien n'est supprimé.
+app.post('/admin/set-cote', async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+    const { id, cote } = req.body || {};
+    if (typeof id !== 'string' || !id) return res.status(400).json({ ok: false, error: 'Identifiant manquant' });
+    if (!isCote(cote)) return res.status(400).json({ ok: false, error: 'Cote invalide (nombre entier de 1 à 30)' });
+    const ref = db.collection('teams').doc(id);
+    const snap = await ref.get();
+    if (!snap.exists) return res.status(400).json({ ok: false, error: 'Équipe introuvable' });
+    const team = snap.data();
+    const oldCote = Number(team.cote);
+    if (oldCote === cote) return res.json({ ok: true, unchanged: true });
+
+    let backfilled = 0;
+    if (Number.isFinite(oldCote)) {
+      const pending = [];
+      for (const [field, coteField] of [['equipeA', 'coteA'], ['equipeB', 'coteB']]) {
+        const ms = await db.collection('matches').where(field, '==', team.name).get();
+        for (const d of ms.docs) if (d.data()[coteField] === undefined) pending.push([d.id, { [coteField]: oldCote }]);
+      }
+      for (let i = 0; i < pending.length; i += 400) {
+        const batch = db.batch();
+        for (const [mid, data] of pending.slice(i, i + 400)) batch.set(db.collection('matches').doc(mid), data, { merge: true });
+        await batch.commit();
+      }
+      backfilled = pending.length;
+    }
+    await ref.update({ cote });
+    console.log(`[admin] cote de ${team.name} : ${oldCote} -> ${cote} (${backfilled} matchs complétés avec l'ancienne cote)`);
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('set-cote:', e);
     return res.status(500).json({ ok: false, error: 'Erreur serveur' });
   }
 });
@@ -1009,10 +1132,16 @@ app.post('/admin/edit-match', async (req, res) => {
     const snap = await ref.get();
     if (!snap.exists) return res.status(400).json({ ok: false, error: 'Match introuvable' });
     const old = snap.data();
-    const tA = await findByName('teams', old.equipeA);
-    const tB = await findByName('teams', old.equipeB);
-    if (!tA || !tB) return res.status(400).json({ ok: false, error: 'Équipes introuvables' });
-    const { deltaA, deltaB } = computePoints(Number(tA.cote), Number(tB.cote), winner, !!sc.set3);
+    // Cote du jour du match si elle a été enregistrée, sinon cote actuelle de l'équipe.
+    const coteOf = async (stored, name) => {
+      if (Number.isFinite(stored)) return stored;
+      const t = await findByName('teams', name);
+      return t ? Number(t.cote) : null;
+    };
+    const coteA = await coteOf(old.coteA, old.equipeA);
+    const coteB = await coteOf(old.coteB, old.equipeB);
+    if (!Number.isFinite(coteA) || !Number.isFinite(coteB)) return res.status(400).json({ ok: false, error: 'Équipes introuvables' });
+    const { deltaA, deltaB } = computePoints(coteA, coteB, winner, !!sc.set3);
     await ref.update({ vainqueur: winner, scores: sc, pointsA: deltaA, pointsB: deltaB, editedAt: FieldValue.serverTimestamp() });
     return res.json({ ok: true, pointsA: deltaA, pointsB: deltaB });
   } catch (e) {
@@ -1026,16 +1155,18 @@ app.post('/admin/edit-jmatch', async (req, res) => {
   try {
     if (!(await requireAdmin(req, res))) return;
     const { matchId, scores } = req.body || {};
-    const sc = cleanScores(scores);
-    if (!sc) return res.status(400).json({ ok: false, error: 'Scores invalides' });
-    const winner = deriveWinner(sc);
-    if (!winner) return res.status(400).json({ ok: false, error: SCORE_ERROR });
+    // Un match avec vainqueur, ou une ÉGALITÉ (+1⭐ chacun) : chez les juniors,
+    // une égalité est un résultat valable, qu'on doit pouvoir corriger aussi.
+    const won = cleanScores(scores);
+    const winner = won ? deriveWinner(won) : null;
+    const sc = winner ? won : cleanDrawScores(scores);
+    if (!sc) return res.status(400).json({ ok: false, error: won ? SCORE_ERROR : 'Scores invalides' });
     const ref = db.collection('juniors_matches').doc(String(matchId));
     const snap = await ref.get();
     if (!snap.exists) return res.status(400).json({ ok: false, error: 'Match introuvable' });
-    const starsA = winner === 'A' ? 2 : 1;
+    const starsA = winner === 'A' ? 2 : 1; // égalité : 1 chacun
     const starsB = winner === 'B' ? 2 : 1;
-    const update = { vainqueur: winner, scores: sc, starsA, starsB, editedAt: FieldValue.serverTimestamp() };
+    const update = { vainqueur: winner || null, scores: sc, starsA, starsB, editedAt: FieldValue.serverTimestamp() };
     if (snap.data().score !== undefined) update.score = FieldValue.delete();
     await ref.update(update);
     return res.json({ ok: true, starsA, starsB });
@@ -1061,20 +1192,37 @@ app.post('/admin/add-jmatch-draw', async (req, res) => {
     const jB = await findByName('juniors', joueurB);
     if (!jA || !jB) return res.status(400).json({ ok: false, error: 'Joueur introuvable' });
 
-    const greenBalls = !!(jA.green || jB.green);
-    await db.collection('juniors_matches').add({
-      joueurA: jA.name, joueurB: jB.name,
-      vainqueur: null, scores: sc,
-      starsA: 1, starsB: 1, greenBalls,
-      date: FieldValue.serverTimestamp(),
-    });
-    const setsTxt = Object.values(sc).join(' / ');
-    console.log(`[add-jmatch-draw] ${jA.name} vs ${jB.name} | égalité ${setsTxt} | +1⭐/+1⭐`);
-    return res.json({ ok: true, starsA: 1, starsB: 1 });
+    // Même anti-doublon que les autres saisies : un double clic ou un renvoi
+    // après une coupure ne donne pas deux fois l'étoile.
+    const { submissionId } = req.body || {};
+    const sid = isSubmissionId(submissionId) ? 'd:' + submissionId : null;
+    return await writeOnce(res,
+      { kind: 'add-jmatch-draw', collection: 'juniors_matches', fieldA: 'joueurA', fieldB: 'joueurB', nameA: jA.name, nameB: jB.name, scores: sc, sid },
+      async () => {
+        const greenBalls = !!(jA.green || jB.green);
+        await db.collection('juniors_matches').add({
+          joueurA: jA.name, joueurB: jB.name,
+          vainqueur: null, scores: sc,
+          starsA: 1, starsB: 1, greenBalls,
+          date: FieldValue.serverTimestamp(),
+        });
+        const setsTxt = Object.values(sc).join(' / ');
+        console.log(`[add-jmatch-draw] ${jA.name} vs ${jB.name} | égalité ${setsTxt} | +1⭐/+1⭐`);
+        return { ok: true, starsA: 1, starsB: 1 };
+      });
   } catch (e) {
     console.error('add-jmatch-draw:', e);
     return res.status(500).json({ ok: false, error: 'Erreur serveur' });
   }
+});
+
+// Gestionnaire d'erreurs final (JSON illisible, corps trop gros…) : une réponse
+// JSON courte, sans la trace interne qui révélerait les chemins du Pi.
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  const status = Number.isInteger(err && err.status) && err.status >= 400 && err.status < 600 ? err.status : 500;
+  if (status >= 500) console.error('erreur:', err);
+  res.status(status).json({ ok: false, error: status === 413 ? 'Requête trop volumineuse' : status < 500 ? 'Requête invalide' : 'Erreur serveur' });
 });
 
 // ----- Publication automatique de l'URL du tunnel dans Firestore -----------

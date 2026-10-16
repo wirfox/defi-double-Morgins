@@ -2393,6 +2393,27 @@
       return out;
     }
 
+    // Égalité junior (même règle que cleanDrawScores côté serveur) : sets saisis
+    // dans l'ordre, au moins un, et autant de sets gagnés de chaque côté (un set
+    // 3-3 ne compte pour personne). Renvoie les scores à envoyer, ou null.
+    function drawScoresFromPairs(pairs) {
+      const out = {};
+      let setsA = 0, setsB = 0, entered = 0, gap = false;
+      for (let i = 0; i < pairs.length; i++) {
+        const p = pairs[i] || {};
+        const aEmpty = p.a === '' || p.a == null;
+        const bEmpty = p.b === '' || p.b == null;
+        if (aEmpty && bEmpty) { gap = true; continue; }
+        if (gap || aEmpty || bEmpty) return null;
+        if (!/^\d{1,2}$/.test(String(p.a).trim()) || !/^\d{1,2}$/.test(String(p.b).trim())) return null;
+        const a = Number(p.a), b = Number(p.b);
+        if (a > b) setsA++; else if (b > a) setsB++;
+        out['set' + (i + 1)] = `${a}-${b}`;
+        entered++;
+      }
+      return entered >= 1 && setsA === setsB ? out : null;
+    }
+
     /* ============================================================
        ╔══════════════════════════════════════════════════════════╗
        ║   PARTIE TOURNOI — Firebase + écrans live                ║
@@ -2467,26 +2488,47 @@
     // et lue ici en temps réel : si l'URL du tunnel change, l'app la récupère
     // automatiquement, sans rien à modifier.
     let PI_URL = null;
+    // Les PINs et le code admin partent vers cette adresse : on n'accepte qu'une
+    // adresse de tunnel Cloudflare, pour qu'une valeur erronée dans config/server
+    // ne puisse jamais les envoyer vers un autre site.
+    // (Si un jour le serveur change d'adresse — tunnel nommé, domaine — il faudra
+    //  adapter cette vérification.)
+    const PI_URL_PATTERN = /^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/;
     function subscribePiUrl() {
       if (!firebaseReady) return;
       db.collection('config').doc('server').onSnapshot(
-        d => { PI_URL = (d.exists && d.data().url) ? String(d.data().url).replace(/\/+$/, '') : null; },
+        d => {
+          const url = (d.exists && d.data().url) ? String(d.data().url).replace(/\/+$/, '') : null;
+          if (url && !PI_URL_PATTERN.test(url)) console.error('config/server : adresse refusée', url);
+          PI_URL = url && PI_URL_PATTERN.test(url) ? url : null;
+        },
         err => console.error('config/server snapshot:', err)
       );
+    }
+    // Sans délai maximal, un tunnel qui ne répond plus laisserait l'écran sur
+    // « Enregistrement… » indéfiniment. Le renvoi d'une saisie reste sûr :
+    // l'identifiant d'envoi empêche qu'elle soit enregistrée deux fois.
+    const PI_TIMEOUT_MS = 15000;
+    async function piFetch(url, options) {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), PI_TIMEOUT_MS);
+      try {
+        return await fetch(url, { ...(options || {}), signal: ctrl.signal });
+      } catch (e) {
+        if (e && e.name === 'AbortError') throw new Error('Le serveur ne répond pas (délai dépassé). Vérifie l\'historique avant de réessayer.');
+        throw new Error('Serveur injoignable. Vérifie que le Raspberry est allumé et connecté.');
+      } finally {
+        clearTimeout(timer);
+      }
     }
     // Appel POST au serveur Pi : renvoie l'objet JSON, lève une erreur sinon.
     async function piPost(path, body) {
       if (!PI_URL) throw new Error('Serveur indisponible (URL non configurée). Le Raspberry est-il allumé ?');
-      let res;
-      try {
-        res = await fetch(PI_URL + path, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body || {})
-        });
-      } catch (e) {
-        throw new Error('Serveur injoignable. Vérifie que le Raspberry est allumé et connecté.');
-      }
+      const res = await piFetch(PI_URL + path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body || {})
+      });
       let data = {};
       try { data = await res.json(); } catch (e) {}
       if (!res.ok || !data.ok) throw new Error(data.error || ('Erreur serveur (' + res.status + ')'));
@@ -2504,12 +2546,7 @@
     // Appel GET au serveur Pi.
     async function piGet(path) {
       if (!PI_URL) throw new Error('Serveur indisponible (URL non configurée). Le Raspberry est-il allumé ?');
-      let res;
-      try {
-        res = await fetch(PI_URL + path);
-      } catch (e) {
-        throw new Error('Serveur injoignable. Vérifie que le Raspberry est allumé et connecté.');
-      }
+      const res = await piFetch(PI_URL + path);
       let data = {};
       try { data = await res.json(); } catch (e) {}
       if (!res.ok || !data.ok) throw new Error(data.error || ('Erreur serveur (' + res.status + ')'));
@@ -2541,6 +2578,16 @@
       });
       return m;
     };
+    // Ordre du classement junior, commun à la liste et au profil : étoiles
+    // (décroissant), puis position dans la liste JUNIORS (un joueur ajouté plus
+    // tard passe après), puis nom. Toujours la même clé dans le même ordre : le
+    // tri ne peut pas « tourner en rond » d'un navigateur à l'autre.
+    function juniorRankCompare(starsOf) {
+      const pos = n => { const i = JUNIORS.findIndex(j => j.name === n); return i >= 0 ? i : Infinity; };
+      return (a, b) => (starsOf(b.name) - starsOf(a.name))
+        || (pos(a.name) === pos(b.name) ? 0 : pos(a.name) < pos(b.name) ? -1 : 1)
+        || a.name.localeCompare(b.name, 'fr');
+    }
     const juniorStarsMap = () => {
       const m = {};
       state.juniorsMatchesLive.forEach(x => {
@@ -2866,17 +2913,20 @@
     }
 
     function populateSelects() {
-      const opts = getTeamsSource()
+      const sorted = getTeamsSource()
         .slice()
-        .sort((a,b) => a.name.localeCompare(b.name, 'fr'))
-        .map(t => `<option value="${escapeHtml(t.name)}">${escapeHtml(t.name)} (cote ${t.cote})</option>`)
+        .sort((a,b) => a.name.localeCompare(b.name, 'fr'));
+      const toOpts = list => list
+        .map(t => `<option value="${escapeHtml(t.name)}">${escapeHtml(t.name)} (cote ${num(t.cote)})</option>`)
         .join('');
       const blank = '<option value="">— Choisir une équipe —</option>';
       ['selectA','selectB'].forEach(id => {
         const sel = $(id);
         if (!sel) return;
         const cur = sel.value;
-        sel.innerHTML = blank + opts;
+        // Le menu B exclut toujours l'équipe A, même après une mise à jour de la liste.
+        const list = id === 'selectB' ? sorted.filter(t => t.name !== state.result.teamA) : sorted;
+        sel.innerHTML = blank + toOpts(list);
         sel.value = cur;
       });
     }
@@ -2923,7 +2973,7 @@
       const optsB = getTeamsSource()
         .filter(t => t.name !== state.result.teamA)
         .sort((a,b) => a.name.localeCompare(b.name, 'fr'))
-        .map(t => `<option value="${escapeHtml(t.name)}">${escapeHtml(t.name)} (cote ${t.cote})</option>`)
+        .map(t => `<option value="${escapeHtml(t.name)}">${escapeHtml(t.name)} (cote ${num(t.cote)})</option>`)
         .join('');
       $('selectB').innerHTML = '<option value="">— Choisir une équipe —</option>' + optsB;
       state.result.teamB = null;
@@ -3000,7 +3050,7 @@
       if (!PI_URL) return 'unreachable';
       let res;
       try {
-        res = await fetch(PI_URL + '/verify-pin', {
+        res = await piFetch(PI_URL + '/verify-pin', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ scope, name, pin: String(pin) })
@@ -3243,6 +3293,8 @@
       $('screen-admin').classList.add('active');
       state.adminUnlocked = false;
       state.adminCode = null;  // sécurité : on oublie le code à chaque accès
+      // Le jeton précédent est aussi oublié côté serveur (sans attendre la réponse).
+      if (state.adminToken && PI_URL) piPost('/admin/logout', { adminToken: state.adminToken }).catch(() => {});
       state.adminToken = null;
       $('adminPin').value = '';
       $('adminError').textContent = '';
@@ -3291,14 +3343,15 @@
     async function submitAdminCode() {
       const v = $('adminPin').value;
       $('adminError').textContent = '';
-      if (v.length < 6) { $('adminError').textContent = 'Code trop court.'; return; }
-
       // Mode démo
       if (!firebaseReady) {
         if (v === 'demo000') unlockAdminPanel();
         else $('adminError').textContent = 'Mode démo : code = demo000';
         return;
       }
+      // Même minimum que le serveur : un code plus court y serait refusé, et
+      // gaspillerait un des 5 essais du quart d'heure.
+      if (v.length < 8) { $('adminError').textContent = 'Code trop court (8 caractères minimum).'; return; }
 
       const btn = $('adminLoginBtn');
       if (btn) btn.disabled = true;
@@ -3367,7 +3420,7 @@
         // Affichage des PINs en clair (UNE seule fois — à imprimer / distribuer)
         out.innerHTML = `
           <div style="font-size:0.85rem;font-weight:500;margin-bottom:0.6rem;color:var(--primary-dark);">
-            ✓ 22 équipes créées (PINs chiffrés dans Firestore). Voici la liste à imprimer / distribuer :
+            ✓ ${generated.length} équipes créées (PINs chiffrés dans Firestore). Voici la liste à imprimer / distribuer :
           </div>
           <div class="seed-pin-list">
             ${generated.map(t => `
@@ -3415,14 +3468,29 @@
         // version chiffrée.
         const map = await loadPinEnc(true);
         const pins = [];
+        const unreadable = [];
         for (const scope of ['teams', 'juniors']) {
+          const live = scope === 'teams' ? state.teamsLive : state.juniorsLive;
           for (const [id, enc] of Object.entries(map[scope])) {
             if (!enc) continue;
             try {
               const plain = await decryptWithCode(enc, state.adminCode);
               pins.push({ id, pinEnc: await encryptWithCode(plain, p1) });
-            } catch (e) { /* PIN illisible : on le laisse tel quel */ }
+            } catch (e) {
+              const d = (live || []).find(x => x.id === id);
+              unreadable.push(d ? d.name : id);
+            }
           }
+        }
+        // Un PIN déjà illisible ne peut pas être rechiffré : il restera illisible
+        // dans l'admin (la saisie des matchs, elle, continue de marcher). On le
+        // dit avant de changer, plutôt que de le découvrir après.
+        if (unreadable.length && !confirm(
+          `${unreadable.length} PIN illisible(s) avec le code actuel : ${unreadable.join(', ')}.\n\n` +
+          'Ils ne pourront pas être rechiffrés et resteront affichés « ⚠ erreur » dans l\'admin ' +
+          '(il faudra leur redonner un PIN). Les matchs ne sont pas touchés.\n\nChanger le code quand même ?')) {
+          status.textContent = 'Changement annulé.';
+          return;
         }
 
         status.textContent = 'Enregistrement…';
@@ -3435,7 +3503,8 @@
         pinEncCache = null;
         $('changeAdminPin').value = ''; $('changeAdminPin2').value = '';
         status.className = 'save-status ok';
-        status.textContent = `✓ Code admin changé (${r.reencrypted} PINs rechiffrés)`;
+        status.textContent = `✓ Code admin changé (${r.reencrypted} PINs rechiffrés` +
+          (unreadable.length ? `, ${unreadable.length} illisible(s) à redéfinir : ${unreadable.join(', ')}` : '') + ')';
         renderAdminPins();
         renderAdminJPins();
       } catch (e) {
@@ -3540,15 +3609,30 @@
             <input type="text" maxlength="4" pattern="[0-9]{4}" value="${escapeHtml(t.plainPin)}" id="newpin-${t.id}">
             <div class="admin-pin-actions">
               <button onclick="updatePin('${t.id}')">Modifier</button>
+              <button onclick="changeTeamCote('${t.id}')" title="Changer la cote sans toucher aux points ni au PIN">Cote ${num(t.cote)}</button>
               <button class="admin-del-btn" onclick="deleteTeam('${t.id}')">Supprimer</button>
             </div>
           </div>`).join('');
     }
 
+    // Changer la cote sans supprimer l'équipe : les points déjà gagnés restent
+    // ceux des matchs joués, le PIN ne change pas.
+    async function changeTeamCote(id) {
+      const t = state.teamsLive.find(x => x.id === id);
+      if (!t) return;
+      const raw = prompt(`Nouvelle cote pour "${t.name}" (nombre entier de 1 à 30) :\n\nLes points déjà gagnés ne changent pas. La nouvelle cote compte pour les prochains matchs.`, String(num(t.cote)));
+      if (raw === null) return;
+      const cote = Number(raw.trim());
+      if (!Number.isInteger(cote) || cote < 1 || cote > 30) { alert('Cote invalide : nombre entier de 1 à 30.'); return; }
+      if (cote === num(t.cote)) return;
+      try { await piAdmin('/admin/set-cote', { id, cote }); }
+      catch (e) { alert('Erreur : ' + e.message); }
+    }
+
     async function deleteTeam(id) {
       if (!firebaseReady) { alert('Firebase non configuré.'); return; }
       const name = (state.teamsLive.find(t => t.id === id) || {}).name || 'cette équipe';
-      if (!confirm(`Supprimer l'équipe "${name}" ?\n\nLes matchs déjà joués par cette équipe restent dans l'historique (mais sans profil cliquable). À utiliser en cas d'erreur de saisie initiale.`)) return;
+      if (!confirm(`Supprimer l'équipe "${name}" ?\n\nLes matchs déjà joués par cette équipe restent dans l'historique (mais sans profil cliquable). À utiliser en cas d'erreur de saisie initiale.\n\nPour changer seulement la cote, utilise plutôt le bouton « Cote ».`)) return;
       try {
         // La suppression passe par le serveur : les règles Firestore ne
         // l'autorisent plus depuis le navigateur (avant, n'importe quel
@@ -3638,6 +3722,13 @@
       const pairs = [editScores[1], editScores[2]];
       if (editHas3) pairs.push(editScores[3]);
       const res = deriveWinnerFromPairs(pairs);
+      if (!res.ok && editKind === 'junior' && drawScoresFromPairs(pairs)) {
+        // Chez les juniors, une égalité est un résultat valable (+1⭐ chacun).
+        out.innerHTML = `<div class="winner-banner"><span class="winner-icon">⚖️</span><div class="winner-text"><div class="winner-label">Égalité — +1⭐ pour chaque joueur</div><div class="winner-name">${escapeHtml(editNameA)} / ${escapeHtml(editNameB)}</div></div></div>` +
+          (res.error === 'equal' ? `<div class="score-note info">Pour désigner un vainqueur, ajoute le 3ᵉ set.</div>` : '');
+        if (btn) btn.disabled = false;
+        return;
+      }
       if (!res.ok) {
         out.innerHTML = `<div class="score-note ${SCORE_WARN.has(res.error) ? 'warn' : 'info'}">${SCORE_WARN.has(res.error) ? '⚠️ ' : ''}${SCORE_ERR[res.error]}</div>`;
         if (btn) btn.disabled = true;
@@ -3651,6 +3742,7 @@
     function openEditMatch(id) {
       const m = state.matchesLive.find(x => x.id === id);
       if (!m) return;
+      clearTimeout(editCloseTimer); editCloseTimer = null;
       editingMatchId = id;
       editNameA = m.equipeA; editNameB = m.equipeB;
       initEditScores(m, 'team');
@@ -3689,7 +3781,21 @@
       $('editModal').classList.remove('hidden');
     }
 
+    // Fermeture différée après un enregistrement réussi. Si l'admin a déjà
+    // ouvert un autre match entre-temps, elle ne doit pas fermer celui-là.
+    let editCloseTimer = null;
+    function closeEditModalSoon() {
+      const m = editingMatchId, j = editingJMatchId;
+      clearTimeout(editCloseTimer);
+      editCloseTimer = setTimeout(() => {
+        editCloseTimer = null;
+        if (editingMatchId === m && editingJMatchId === j) closeEditModal();
+      }, 1500);
+    }
+
     function closeEditModal() {
+      clearTimeout(editCloseTimer);
+      editCloseTimer = null;
       $('editModal').classList.add('hidden');
       editingMatchId  = null;
       editingJMatchId = null;
@@ -3725,7 +3831,7 @@
 
         status.className = 'save-status ok';
         status.textContent = '✓ Match modifié, classement mis à jour';
-        setTimeout(() => closeEditModal(), 1500);
+        closeEditModalSoon();
       } catch (e) {
         console.error(e);
         status.className = 'save-status error';
@@ -3765,6 +3871,14 @@
       // Vérifier qu'elle n'existe pas déjà
       if (state.teamsLive.some(t => t.name.toLowerCase() === name.toLowerCase())) {
         status.className = 'save-status error'; status.textContent = 'Cette équipe existe déjà.'; return;
+      }
+      // Les matchs sont rattachés aux équipes par leur nom : une équipe recréée
+      // sous un ancien nom récupère l'historique et les points de l'ancienne.
+      const oldMatches = state.matchesLive.filter(m => m.equipeA === name || m.equipeB === name).length;
+      if (oldMatches && !confirm(`${oldMatches} match(s) de l'historique portent déjà le nom "${name}".\n\n` +
+          'Ils seront comptés pour cette nouvelle équipe (points et historique). ' +
+          'Pour changer seulement une cote, annule et utilise le bouton « Cote » dans la liste des équipes.\n\nCréer l\'équipe quand même ?')) {
+        return;
       }
 
       $('addTeamBtn').disabled = true;
@@ -3835,16 +3949,9 @@
         ? state.juniorsLive.map(j => ({ name: j.name, green: j.green, stars: starsMap[j.name] || 0 }))
         : JUNIORS.map(j => ({ name: j.name, green: j.green, stars: 0 }));
 
-      const sorted = [...data].sort((a, b) => {
-        if (state.jSort === 'alpha') return a.name.localeCompare(b.name, 'fr');
-        // Classement : par étoiles desc, puis fallback sur l'ordre de la liste JUNIORS
-        // (pour que le tri reste visuellement distinct du tri alphabétique même quand tout le monde a 0⭐)
-        if (b.stars !== a.stars) return b.stars - a.stars;
-        const aIdx = JUNIORS.findIndex(j => j.name === a.name);
-        const bIdx = JUNIORS.findIndex(j => j.name === b.name);
-        if (aIdx >= 0 && bIdx >= 0) return aIdx - bIdx;
-        return a.name.localeCompare(b.name, 'fr');
-      });
+      const byRank = juniorRankCompare(n => starsMap[n] || 0);
+      const sorted = [...data].sort((a, b) =>
+        state.jSort === 'alpha' ? a.name.localeCompare(b.name, 'fr') : byRank(a, b));
 
       $('jplayersSub').textContent = `${data.length} joueurs · Tournoi junior 2026`;
 
@@ -3876,13 +3983,7 @@
       // Même tri que la liste "Joueurs" (étoiles desc, puis ordre JUNIORS, puis alpha).
       // Étoiles déduites des matchs.
       const starsMap = juniorStarsMap();
-      const ranked = [...state.juniorsLive].sort((a, b) => {
-        if ((starsMap[b.name] || 0) !== (starsMap[a.name] || 0)) return (starsMap[b.name] || 0) - (starsMap[a.name] || 0);
-        const aIdx = JUNIORS.findIndex(j => j.name === a.name);
-        const bIdx = JUNIORS.findIndex(j => j.name === b.name);
-        if (aIdx >= 0 && bIdx >= 0) return aIdx - bIdx;
-        return a.name.localeCompare(b.name, 'fr');
-      });
+      const ranked = [...state.juniorsLive].sort(juniorRankCompare(n => starsMap[n] || 0));
       const rankIdx = ranked.findIndex(x => x.name === name);
       const rankTxt = rankIdx >= 0 ? `${rankIdx + 1}ᵉ / ${ranked.length} joueurs` : '—';
 
@@ -4081,9 +4182,10 @@
 
     // ─── Saisie junior ───
     function populateJSelects() {
-      const opts = getJuniorsSource()
+      const sorted = getJuniorsSource()
         .slice()
-        .sort((a, b) => a.name.localeCompare(b.name, 'fr'))
+        .sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+      const toOpts = list => list
         .map(j => `<option value="${escapeHtml(j.name)}" data-green="${j.green ? 1 : 0}">${escapeHtml(j.name)}${j.green ? ' 🟢' : ''}</option>`)
         .join('');
       const blank = '<option value="">— Choisir un joueur —</option>';
@@ -4091,7 +4193,9 @@
         const sel = $(id);
         if (!sel) return;
         const cur = sel.value;
-        sel.innerHTML = blank + opts;
+        // Le menu B exclut toujours le joueur A, même après une mise à jour de la liste.
+        const list = id === 'jselectB' ? sorted.filter(j => j.name !== state.jResult.joueurA) : sorted;
+        sel.innerHTML = blank + toOpts(list);
         sel.value = cur;
       });
     }
@@ -4524,7 +4628,7 @@
       $('addDrawJBtn').disabled = true;
       status.textContent = 'Enregistrement…';
       try {
-        await piAdmin('/admin/add-jmatch-draw', { joueurA, joueurB, scores });
+        await piAdmin('/admin/add-jmatch-draw', { joueurA, joueurB, scores, submissionId: newSubmissionId() });
         status.className = 'save-status ok'; status.textContent = `✓ Égalité ${a}-${b} enregistrée (1 point à chacun)`;
         $('drawJoueurA').value = '';
         $('drawJoueurB').value = '';
@@ -4571,6 +4675,7 @@
     function openEditJuniorMatch(id) {
       const m = state.juniorsMatchesLive.find(x => x.id === id);
       if (!m) return;
+      clearTimeout(editCloseTimer); editCloseTimer = null;
       editingJMatchId = id;
       editNameA = m.joueurA; editNameB = m.joueurB;
       initEditScores(m, 'junior');
@@ -4594,7 +4699,7 @@
         <div id="editPreview" style="margin-top:1rem;"></div>
 
         <div style="font-size:0.78rem;color:var(--text-light);padding:0.7rem 0.85rem;background:var(--primary-light);border-radius:var(--radius);margin-top:0.8rem;line-height:1.5;">
-          ℹ️ En sauvegardant, les étoiles du match sont recalculées (vainqueur +2⭐, perdant +1⭐) et le classement se met à jour automatiquement.
+          ℹ️ En sauvegardant, les étoiles du match sont recalculées (vainqueur +2⭐, perdant +1⭐, égalité +1⭐ chacun) et le classement se met à jour automatiquement.
         </div>
 
         <div class="modal-actions">
@@ -4619,9 +4724,10 @@
       const pairs = [editScores[1], editScores[2]];
       if (editHas3) pairs.push(editScores[3]);
       const res = deriveWinnerFromPairs(pairs);
-      if (!res.ok) { status.className = 'save-status error'; status.textContent = SCORE_ERR[res.error]; return; }
+      const drawScores = res.ok ? null : drawScoresFromPairs(pairs);
+      if (!res.ok && !drawScores) { status.className = 'save-status error'; status.textContent = SCORE_ERR[res.error]; return; }
 
-      const scores = pairsToScores(editScores, editHas3);
+      const scores = drawScores || pairsToScores(editScores, editHas3);
       $('saveJEditBtn').disabled = true;
       status.textContent = 'Enregistrement…';
 
@@ -4629,13 +4735,12 @@
         // L'édition passe par le serveur (Pi), qui redéduit le vainqueur et recalcule les étoiles.
         await piAdmin('/admin/edit-jmatch', {
           matchId: editingJMatchId,
-          winner: res.winner,
           scores
         });
 
         status.className = 'save-status ok';
         status.textContent = '✓ Match modifié, classement mis à jour';
-        setTimeout(() => closeEditModal(), 1500);
+        closeEditModalSoon();
       } catch (e) {
         console.error(e);
         status.className = 'save-status error';

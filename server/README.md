@@ -137,13 +137,16 @@ rechiffrés automatiquement au passage.
 
 | Avant | Maintenant |
 |-------|-----------|
-| La limite anti-brute-force se contournait avec un en-tête HTTP falsifié, rendant les PINs à 4 chiffres cassables en quelques minutes | Blocage **par équipe/joueur** après 10 essais faux, insensible au changement d'IP |
+| La limite anti-brute-force se contournait avec un en-tête HTTP falsifié, rendant les PINs à 4 chiffres cassables en quelques minutes | Blocage **par appareil** après 10 PIN faux (15 min), et **par équipe/joueur**, tous appareils confondus, après 30 PIN faux d'affilée ou 100 sur 30 jours (jusqu'au déblocage par l'admin), insensible au changement d'IP |
 | L'empreinte du code admin était lisible par tout le monde, en SHA-256 non salé (cassable hors ligne) | PBKDF2 salé, 210 000 itérations, dans une zone que le navigateur ne peut pas lire |
 | Les PINs chiffrés étaient publics : deuxième voie d'attaque sur le code admin | Servis uniquement à un admin authentifié |
 | N'importe qui pouvait supprimer équipes, joueurs et matchs depuis la console du navigateur | Suppressions réservées à l'admin, côté serveur |
 | N'importe qui pouvait écrire les champs de PIN et le drapeau « catégorie verte » | Écriture impossible depuis le navigateur |
 | Le code admin ne pouvait plus jamais être changé | Rotation possible depuis le panneau admin |
 | La liste des tentatives grossissait sans fin en mémoire | Purge périodique et bornage |
+| Le limiteur du code admin pouvait être « vidé » en l'inondant depuis des milliers d'adresses IPv6 | Limiteur qui refuse les nouvelles adresses quand il est plein, et plafond **global** : au-delà de 50 codes faux en une heure, la connexion admin est suspendue, sauf depuis les adresses d'où l'admin s'est déjà connecté |
+| Une erreur (JSON mal formé…) renvoyait une page HTML avec les chemins internes du Pi | Réponse JSON courte, avec l'en-tête CORS |
+| Changer une cote obligeait à supprimer puis recréer l'équipe (nouveau PIN, et risque de mélanger les historiques) | Bouton « Cote » dans l'admin ; chaque match garde la cote du jour, utilisée si on corrige son score plus tard |
 
 ---
 
@@ -160,6 +163,7 @@ Les endpoints `/admin/*` exigent `adminToken`, le jeton de session obtenu via
 | POST | `/submit-match` | Enregistrer un match adulte (vérifie 2 PINs, calcule les points) |
 | POST | `/submit-jmatch` | Enregistrer un match junior |
 | POST | `/admin/login` | Se connecter et obtenir un jeton de session |
+| POST | `/admin/logout` | Oublier le jeton de session tout de suite |
 | POST | `/admin/setup` | Définir le tout premier code admin (depuis le Pi uniquement) |
 | POST | `/admin/change-code` | Changer le code admin (rechiffre les PINs) |
 | POST | `/admin/pins` | Lire les PINs chiffrés (affichage admin) |
@@ -168,6 +172,8 @@ Les endpoints `/admin/*` exigent `adminToken`, le jeton de session obtenu via
 | POST | `/admin/delete-team` · `/admin/delete-junior` | Supprimer une équipe / un joueur |
 | POST | `/admin/delete-match` · `/admin/delete-jmatch` | Supprimer un match |
 | POST | `/admin/set-green` | Basculer la catégorie verte d'un junior |
+| POST | `/admin/set-cote` | Changer la cote d'une équipe (sans toucher aux points ni au PIN) |
+| POST | `/admin/add-jmatch-draw` | Enregistrer une égalité junior (+1⭐ chacun) |
 | POST | `/admin/locks` | Lister les saisies bloquées (trop de PIN faux) |
 | POST | `/admin/unlock-pin` | Débloquer la saisie de PIN d'une équipe / d'un joueur |
 | POST | `/admin/edit-match` · `/admin/edit-jmatch` | Corriger un score (points recalculés) |

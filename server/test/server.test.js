@@ -421,3 +421,125 @@ test("le script de création du code admin (npm run admin-setup) fonctionne depu
     coll('secrets').set('admin', saved);
   }
 });
+
+// ---------- Corrections issues de l'audit d'octobre 2026 ----------
+const adminCall = (path, body) => call(path, { adminToken: token, ...body }, newIp());
+
+test('une erreur de lecture du JSON répond en JSON, avec le CORS, sans trace interne', async () => {
+  const res = await fetch(base + '/verify-pin', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: 'https://wirfox.github.io', 'CF-Connecting-IP': newIp() },
+    body: '{bad',
+  });
+  const text = await res.text();
+  assert.strictEqual(res.status, 400);
+  assert.strictEqual(res.headers.get('access-control-allow-origin'), 'https://wirfox.github.io');
+  assert.deepStrictEqual(JSON.parse(text), { ok: false, error: 'Requête invalide' });
+  assert.ok(!/node_modules|\/home\//.test(text), 'la réponse ne doit pas révéler les chemins du serveur');
+});
+
+test("l'ajout d'équipe refuse une cote non entière, un nom invisible et un doublon de majuscules", async () => {
+  const add = (name, cote) => adminCall('/admin/add-team', { name, cote, pin: '4321' });
+  assert.strictEqual((await add('Cote Virgule', 12.5)).status, 400);
+  assert.strictEqual((await add('Cote Booléen', true)).status, 400);
+  assert.strictEqual((await add('Cote Tableau', [5])).status, 400);
+  assert.strictEqual((await add('​​', 5)).status, 400);
+  assert.strictEqual((await add('t1', 5)).status, 409);
+  const ok = await add('  Nouvelle​ Équipe ', 7);
+  assert.strictEqual(ok.ok, true);
+  assert.strictEqual(coll('teams').get(ok.id).name, 'Nouvelle Équipe');
+});
+
+test('changer la cote garde les points et la cote du jour des anciens matchs', async () => {
+  addTeam('C1', 4); addTeam('C2', 8);
+  // Ancien match, enregistré avant que les cotes soient gardées dans le match.
+  coll('matches').set('legacy1', { equipeA: 'C1', equipeB: 'C2', vainqueur: 'A', scores: { set1: '6-1', set2: '6-2' }, pointsA: 8, pointsB: 3, date: new Date(Date.now() - 3600_000) });
+  const r = await adminCall('/admin/set-cote', { id: 'C2', cote: 12 });
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(coll('teams').get('C2').cote, 12);
+  assert.strictEqual(coll('matches').get('legacy1').coteB, 8, "l'ancien match garde la cote 8");
+  assert.strictEqual(coll('matches').get('legacy1').pointsA, 8, 'les points déjà gagnés ne bougent pas');
+  // Correction du score : recalcul avec la cote du jour (8), pas la nouvelle (12).
+  const e = await adminCall('/admin/edit-match', { matchId: 'legacy1', scores: { set1: '6-1', set2: '6-3' } });
+  assert.strictEqual(e.pointsA, 8);
+  assert.strictEqual((await adminCall('/admin/set-cote', { id: 'C2', cote: 2.5 })).status, 400);
+});
+
+test('un nouveau match garde les cotes du jour', async () => {
+  addTeam('C3', 3); addTeam('C4', 6);
+  const r = await call('/submit-match', { teamA: 'C3', pinA: PIN, teamB: 'C4', pinB: PIN, scores: { set1: '6-4', set2: '6-4' } }, newIp());
+  assert.strictEqual(r.ok, true);
+  const m = [...coll('matches').values()].find((x) => x.equipeA === 'C3');
+  assert.strictEqual(m.coteA, 3);
+  assert.strictEqual(m.coteB, 6);
+});
+
+test("un match junior peut être corrigé en égalité, et une égalité en victoire", async () => {
+  coll('juniors_matches').set('jm1', { joueurA: 'J3', joueurB: 'J4', vainqueur: null, scores: { set1: '3-3' }, starsA: 1, starsB: 1, date: new Date() });
+  let r = await adminCall('/admin/edit-jmatch', { matchId: 'jm1', scores: { set1: '2-2' } });
+  assert.strictEqual(r.ok, true);
+  assert.deepStrictEqual(coll('juniors_matches').get('jm1').scores, { set1: '2-2' });
+  assert.strictEqual(coll('juniors_matches').get('jm1').vainqueur, null);
+  r = await adminCall('/admin/edit-jmatch', { matchId: 'jm1', scores: { set1: '4-1', set2: '4-2' } });
+  assert.strictEqual(r.starsA, 2);
+  assert.strictEqual(coll('juniors_matches').get('jm1').vainqueur, 'A');
+  r = await adminCall('/admin/edit-jmatch', { matchId: 'jm1', scores: { set1: '4-1', set2: '1-4' } });
+  assert.strictEqual(r.starsA, 1);
+  assert.strictEqual(r.starsB, 1);
+  assert.strictEqual(coll('juniors_matches').get('jm1').vainqueur, null);
+  // Un 2-0 suivi d'un 3e set reste refusé.
+  assert.strictEqual((await adminCall('/admin/edit-jmatch', { matchId: 'jm1', scores: { set1: '4-1', set2: '4-2', set3: '1-4' } })).status, 400);
+});
+
+test("une égalité junior n'est enregistrée qu'une fois, et ses sets doivent se suivre", async () => {
+  const before = matchCount('juniors_matches');
+  const draw = (scores) => adminCall('/admin/add-jmatch-draw', { joueurA: 'J3', joueurB: 'J4', scores });
+  assert.strictEqual((await draw({ set1: '3-3', set3: '2-2' })).status, 400);
+  assert.strictEqual((await draw({ set3: '3-3' })).status, 400);
+  const rs = await Promise.all([draw({ set1: '1-1' }), draw({ set1: '1-1' })]);
+  assert.strictEqual(rs.filter((r) => r.ok).length, 1);
+  assert.strictEqual((await draw({ set1: '1-1' })).status, 409);
+  assert.strictEqual(matchCount('juniors_matches'), before + 1);
+});
+
+test('la déconnexion admin invalide le jeton tout de suite', async () => {
+  const login = await call('/admin/login', { code: 'un-code-admin-solide' }, newIp());
+  assert.strictEqual(login.ok, true);
+  assert.strictEqual((await call('/admin/locks', { adminToken: login.token }, newIp())).ok, true);
+  await call('/admin/logout', { adminToken: login.token }, newIp());
+  assert.strictEqual((await call('/admin/locks', { adminToken: login.token }, newIp())).status, 403);
+});
+
+test('le changement de code admin ignore les identifiants de PIN inventés', async () => {
+  const enc = 'ab'.repeat(20);
+  const r = await call('/admin/change-code', {
+    currentCode: 'un-code-admin-solide', newCode: 'un-autre-code-solide',
+    pins: [{ id: 'T2', pinEnc: enc }, { id: '../parasite', pinEnc: enc }],
+  }, newIp());
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.reencrypted, 1);
+  assert.strictEqual(coll('secrets').has('../parasite'), false);
+  assert.strictEqual(coll('secrets').get('T2').pinEnc, enc);
+  token = r.token;
+});
+
+// Doit rester le dernier test : il suspend la connexion admin pour une heure.
+test("au-delà de 50 codes admin faux en une heure, toutes adresses confondues, la connexion est suspendue sauf pour les adresses connues", async () => {
+  const trustedIp = newIp();
+  assert.strictEqual((await call('/admin/login', { code: 'un-autre-code-solide' }, trustedIp)).ok, true);
+  let n = 0;
+  const ip6 = () => `2001:db8:${(++n).toString(16)}::1`; // un bloc /64 différent à chaque fois
+  // (Les tests précédents ont déjà compté quelques codes faux.)
+  let refused = 0;
+  for (let i = 0; i < 60; i++) {
+    const r = await call('/admin/login', { code: 'mauvais-code-' + i }, ip6());
+    if (r.status === 429) break;
+    assert.strictEqual(r.status, 403);
+    refused++;
+  }
+  assert.ok(refused > 0 && refused <= 50, `${refused} codes faux acceptés à l'essai`);
+  // Une nouvelle adresse est refusée même avec le bon code…
+  assert.strictEqual((await call('/admin/login', { code: 'un-autre-code-solide' }, ip6())).status, 429);
+  // …mais l'admin, depuis une adresse d'où il s'est déjà connecté, peut encore entrer.
+  assert.strictEqual((await call('/admin/login', { code: 'un-autre-code-solide' }, trustedIp)).ok, true);
+});

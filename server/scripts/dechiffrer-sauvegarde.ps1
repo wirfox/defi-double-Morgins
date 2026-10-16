@@ -10,7 +10,8 @@
   -Source : un DOSSIER de fichiers téléchargés depuis OneDrive, ou UN SEUL fichier.
             Ne renomme pas les fichiers : leur nom illisible est chiffré lui aussi.
   -Sortie : où écrire les fichiers déchiffrés (par défaut : un dossier « dechiffre-… »
-            à côté de la source). Les .json.gz sont aussi décompressés en .json.
+            à côté de la source, ou dans le dossier temporaire de Windows si la source
+            est dans OneDrive). Les .json.gz sont aussi décompressés en .json.
   -Rclone : chemin de rclone.exe, s'il n'est pas trouvé tout seul.
 
   Les mots de passe sont demandés masqués : ils ne s'affichent pas et ne restent pas
@@ -100,7 +101,19 @@ if ($sourceItem.PSIsContainer) {
   $parent = $sourceItem.DirectoryName
 }
 if (-not (Get-ChildItem -LiteralPath $cryptDir -File -Recurse)) { Stop-WithError "aucun fichier dans « $cryptDir »." }
-if (-not $Sortie) { $Sortie = Join-Path $parent ('dechiffre-' + (Get-Date -Format 'yyyyMMdd-HHmmss')) }
+if (-not $Sortie) {
+  # Jamais à l'intérieur de OneDrive : la copie déchiffrée (avec les données des
+  # PIN) repartirait sinon dans le cloud, en clair.
+  $base = $parent
+  foreach ($od in @($env:OneDrive, $env:OneDriveConsumer, $env:OneDriveCommercial)) {
+    if ($od -and ($parent + '\').StartsWith($od.TrimEnd('\') + '\', [System.StringComparison]::OrdinalIgnoreCase)) {
+      $base = [System.IO.Path]::GetTempPath()
+      Write-Host "La source est dans OneDrive : les fichiers déchiffrés iront dans le dossier temporaire de Windows." -ForegroundColor Yellow
+      break
+    }
+  }
+  $Sortie = Join-Path $base ('dechiffre-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+}
 
 Write-Host "rclone : $rc"
 Write-Host "Fichiers chiffrés : $cryptDir`n"
@@ -116,21 +129,35 @@ $before = @(Get-ChildItem -LiteralPath $Sortie -File -Recurse | ForEach-Object {
 
 try {
   # Remote crypt temporaire, rien n'est enregistré. Le chemin est entre ' ' car il contient « C: ».
-  $remote = ":crypt,remote='" + ($cryptDir -replace "'", "''") + "',password=" + $o1 + ",password2=" + $o2 + ":"
+  # Les mots de passe passent par des variables d'environnement, propres à ce
+  # processus, plutôt que sur la ligne de commande (visible dans la liste des processus).
+  $remote = ":crypt,remote='" + ($cryptDir -replace "'", "''") + "':"
+  $env:RCLONE_CRYPT_PASSWORD = $o1
+  $env:RCLONE_CRYPT_PASSWORD2 = $o2
   $ErrorActionPreference = 'Continue'
   $log = & $rc copy $remote $Sortie 2>&1
   $code = $LASTEXITCODE
   $ErrorActionPreference = 'Stop'
 } finally {
+  Remove-Item Env:RCLONE_CRYPT_PASSWORD, Env:RCLONE_CRYPT_PASSWORD2 -ErrorAction SilentlyContinue
   Remove-Variable o1, o2, remote -ErrorAction SilentlyContinue
   if ($tempDir) { Remove-Item -LiteralPath $tempDir -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
 $new = @(Get-ChildItem -LiteralPath $Sortie -File -Recurse | Where-Object { $before -notcontains $_.FullName })
-if ($code -ne 0 -or $new.Count -eq 0) {
+if ($new.Count -eq 0) {
   if (-not $sortieExisted -and -not (Get-ChildItem -LiteralPath $Sortie -Force)) { Remove-Item -LiteralPath $Sortie -Force }
   if ($code -ne 0) { $log | Select-Object -Last 5 | ForEach-Object { Write-Host $_ } }
+  if ($before.Count -gt 0 -and $code -eq 0) {
+    Stop-WithError "aucun NOUVEAU fichier dans « $Sortie » : soit ils y sont déjà (déchiffrés lors d'un essai précédent), soit le mot de passe ou le salt est faux. Relance avec un dossier de sortie vide pour en être sûr."
+  }
   Stop-WithError "aucun fichier n'a pu être déchiffré. Causes possibles : mot de passe ou salt faux, ou fichier renommé après le téléchargement (il doit garder son nom illisible)."
+}
+if ($code -ne 0) {
+  # Une partie seulement a été déchiffrée : on le dit, et on rappelle que ces
+  # fichiers-là contiennent déjà des données sensibles.
+  $log | Select-Object -Last 5 | ForEach-Object { Write-Host $_ }
+  Write-Host "`nATTENTION : déchiffrement INCOMPLET (rclone a signalé une erreur). Seuls les fichiers ci-dessous ont été déchiffrés." -ForegroundColor Yellow
 }
 
 Write-Host "`nDéchiffrés dans : $Sortie" -ForegroundColor Green
