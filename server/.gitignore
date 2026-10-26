@@ -1,0 +1,10 @@
+# NE JAMAIS committer ces fichiers — ils contiennent des secrets ou sont volumineux
+node_modules/
+serviceAccountKey.json
+# Poivre des PIN : à garder sur le Pi + une copie dans Proton Pass, JAMAIS sur GitHub
+pinPepper.key
+.env
+*.log
+
+# Sauvegardes de la base (contiennent les PIN)
+*.json.gz

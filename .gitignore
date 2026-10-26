@@ -1,0 +1,15 @@
+# NE JAMAIS committer ces fichiers — ils contiennent des secrets ou des données personnelles.
+# (Mêmes règles que server/.gitignore, pour un fichier posé ailleurs par erreur.)
+node_modules/
+serviceAccountKey.json
+pinPepper.key
+rclone.conf
+.env
+*.log
+# Sauvegardes de la base (contiennent les données des PIN), fichiers déchiffrés
+*.json.gz
+dechiffre-*/
+# Vidéos : uniquement pour le propriétaire, jamais sur le dépôt
+*.mp4
+*.mov
+*.webm

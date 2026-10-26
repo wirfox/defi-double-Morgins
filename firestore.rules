@@ -1,0 +1,83 @@
+rules_version = '2';
+
+// ============================================================================
+// Règles de sécurité Firestore — Défi Double TC Morgins
+//
+// Architecture : un serveur de confiance (Raspberry, via le SDK Admin qui
+// contourne ces règles) est le SEUL à écrire quoi que ce soit. Le navigateur
+// ne fait plus que LIRE les classements ; toute modification (saisie d'un
+// match, ajout/suppression d'une équipe, changement de PIN) passe par le
+// serveur, qui vérifie les PINs ou le code admin avant d'agir.
+//
+// Ce que ça garantit :
+//   ✓ Personne ne peut créer ni modifier un match depuis le navigateur
+//     (réservé au serveur, qui vérifie les PINs). Impossible de se fabriquer
+//     un match gagnant.
+//   ✓ Personne ne peut plus SUPPRIMER une équipe, un joueur ou un match depuis
+//     le navigateur : c'était ouvert à tout visiteur, qui pouvait donc vider le
+//     tournoi en quelques lignes dans la console.
+//   ✓ Aucun champ sensible n'est lisible : les hash de PIN, les PINs chiffrés
+//     et l'empreinte du code admin vivent tous dans `secrets`, interdite en
+//     lecture. Plus rien à récupérer pour tenter une attaque hors-ligne.
+//   ✓ Les points/étoiles ne sont jamais écrits (déduits des matchs).
+//
+// ⚠️ ORDRE DE DÉPLOIEMENT — ces règles supposent que le nouveau site ET le
+// nouveau serveur sont déjà en ligne. Les publier avant casserait l'ancien
+// site, qui écrit encore directement dans Firestore. Voir server/README.md.
+//
+// Déployer : Console Firebase > Firestore > Règles > coller > Publier.
+// ============================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---- ÉQUIPES (adulte) ----
+    // Lecture publique (classement) ; toute écriture passe par le serveur.
+    match /teams/{id} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // ---- MATCHS (adulte) ----
+    match /matches/{id} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // ---- JOUEURS (junior) ----
+    match /juniors/{id} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // ---- MATCHS (junior) ----
+    match /juniors_matches/{id} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // ---- SECRETS : INTERDIT au navigateur ----
+    // Hash des PINs, PINs chiffrés (pinEnc) et empreinte PBKDF2 du code admin.
+    // Seul le serveur (SDK Admin) y accède.
+    match /secrets/{id} {
+      allow read, write: if false;
+    }
+
+    // ---- CONFIG ----
+    // config/server : URL du tunnel, écrite par le serveur, lue par l'app.
+    match /config/server {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Tout le reste de config — dont l'ancien config/admin — est illisible.
+    // L'empreinte du code admin ne doit plus pouvoir être récupérée puis
+    // attaquée hors-ligne ; elle vit maintenant dans `secrets`.
+    match /config/{id} {
+      allow read, write: if false;
+    }
+
+    // Tout le reste : refusé.
+    match /{document=**} { allow read, write: if false; }
+  }
+}

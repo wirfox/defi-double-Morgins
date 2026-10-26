@@ -1,0 +1,23 @@
+{
+  "name": "defi-double-pin-server",
+  "version": "1.0.0",
+  "description": "Serveur de validation des PINs et de saisie des matchs — Défi Double TC Morgins. Tourne sur un Raspberry Pi, seul autorisé à écrire les matchs dans Firestore.",
+  "main": "server.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/server.test.js test/backup.test.js test/pepper.test.js",
+    "admin-setup": "node scripts/admin-setup.js",
+    "backup": "node scripts/backup-export.js",
+    "restore": "node scripts/backup-restore.js",
+    "pepper-migrate": "node scripts/pin-pepper-migrate.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.22.3",
+    "firebase-admin": "^14.5.0"
+  }
+}
