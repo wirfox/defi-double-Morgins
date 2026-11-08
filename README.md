@@ -58,4 +58,10 @@ npm install
 npm test        # Node.js 22 ou plus ; Firestore est simulé en mémoire
 ```
 
+`npm audit` signale 6 alertes « moderate » dans `glob` et `minimatch`, tirées
+par `rimraf` dans les dépendances de `firebase-admin` (google-gax). Elles ne
+concernent que des motifs de fichiers fournis par un attaquant, et ces
+bibliothèques ne sont jamais chargées par le serveur : elles disparaîtront
+avec la prochaine mise à jour de `firebase-admin`.
+
 Installation et exploitation du Pi : voir [`server/README.md`](server/README.md).
